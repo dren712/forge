@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+workspaces/
+forge.db
+node_modules/
+.next/
+out/

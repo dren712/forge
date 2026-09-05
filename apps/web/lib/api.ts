@@ -1,0 +1,113 @@
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+
+export interface Experiment {
+  id: string;
+  name: string;
+  goal: string;
+  benchmark_id: string;
+  tool_ids: string[];
+  current_generation_id: string | null;
+  best_generation_id: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  generations_count: number;
+  best_accuracy: number | null;
+  best_reliability: number | null;
+}
+
+export interface Generation {
+  id: string;
+  experiment_id: string;
+  parent_generation_id: string | null;
+  generation_number: number;
+  agent_spec: {
+    model: string;
+    system_prompt: string;
+    planner: { type: string; max_subgoals: number; require_replan_on_error: boolean };
+    tools: string[];
+    memory: { type: string; max_history_items: number };
+    verifier: { type: string; require_zero_failed_tests: boolean; enforce_before_complete: boolean };
+    retry_policy: { max_attempts: number; retry_on_tool_failure: boolean; backoff_seconds: number };
+    orchestration: { type: string };
+  };
+  mutation_id: string | null;
+  metrics: {
+    generation_number: number;
+    total_tasks: number;
+    successful_tasks: number;
+    accuracy: number;
+    reliability: number;
+    total_cost_usd: number;
+    avg_cost_per_task: number;
+    avg_latency_ms: number;
+    composite_score: number;
+    total_tokens: number;
+    total_model_calls: number;
+    total_tool_calls: number;
+    verification_pass_rate: number;
+    failure_breakdown: Record<string, number>;
+  } | null;
+  benchmark_id: string;
+  status: string;
+  rejection_reason: string | null;
+  created_at: string;
+}
+
+export interface TraceEvent {
+  event_id: string;
+  experiment_id: string;
+  generation_id: string | null;
+  execution_id: string | null;
+  timestamp: string;
+  type: string;
+  payload: any;
+  previous_event_hash: string;
+  event_hash: string;
+}
+
+export interface ProvenanceReport {
+  experiment_id: string;
+  is_valid: boolean;
+  total_events: number;
+  broken_index: number | null;
+  message: string;
+  genesis_hash: string;
+  latest_hash: string;
+}
+
+export async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const url = `${API_BASE}${endpoint}`;
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`API Error ${res.status}: ${errorText}`);
+  }
+  return res.json();
+}
+
+export const api = {
+  getHealth: () => fetchJson<{ status: string; product: string }>("/health"),
+  getExperiments: () => fetchJson<Experiment[]>("/experiments"),
+  getExperiment: (id: string) => fetchJson<Experiment>(`/experiments/${id}`),
+  createExperiment: (data: { name: string; goal: string; benchmark_id?: string; tools?: string[]; max_generations?: number }) =>
+    fetchJson<Experiment>("/experiments", { method: "POST", body: JSON.stringify(data) }),
+
+  generateAgent: (id: string) => fetchJson<Generation>(`/experiments/${id}/generate`, { method: "POST" }),
+  runBenchmark: (id: string, taskLimit?: number) =>
+    fetchJson<Generation>(`/experiments/${id}/run${taskLimit ? `?task_limit=${taskLimit}` : ""}`, { method: "POST" }),
+  evolveAgent: (id: string, taskLimit?: number) =>
+    fetchJson<Generation>(`/experiments/${id}/evolve${taskLimit ? `?task_limit=${taskLimit}` : ""}`, { method: "POST" }),
+
+  getGenerations: (id: string) => fetchJson<Generation[]>(`/experiments/${id}/generations`),
+  getGenerationDetail: (id: string) => fetchJson<{ generation: Generation; mutation: any; executions_count: number }>(`/generations/${id}`),
+  getExecutions: (id: string) => fetchJson<any[]>(`/experiments/${id}/executions`),
+  getEvents: (id: string, limit = 150) => fetchJson<TraceEvent[]>(`/experiments/${id}/events?limit=${limit}`),
+  getProvenance: (id: string) => fetchJson<ProvenanceReport>(`/experiments/${id}/provenance`),
+  getBenchmarks: () => fetchJson<any[]>("/benchmarks"),
+  getTools: () => fetchJson<any[]>("/tools"),
+  getNarrationAudioUrl: (genId: string) => `${API_BASE}/generations/${genId}/narrate`,
+};
