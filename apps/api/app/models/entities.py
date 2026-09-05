@@ -29,6 +29,9 @@ class ExperimentModel(Base):
     events: Mapped[list["TraceEventModel"]] = relationship(
         "TraceEventModel", back_populates="experiment", cascade="all, delete-orphan"
     )
+    memories: Mapped[list["ToolMemoryModel"]] = relationship(
+        "ToolMemoryModel", back_populates="experiment", cascade="all, delete-orphan"
+    )
 
 
 class GenerationModel(Base):
@@ -98,3 +101,21 @@ class MutationModel(Base):
     observed_failure: Mapped[str] = mapped_column(String(64), nullable=False)
     expected_effect: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ToolMemoryModel(Base):
+    __tablename__ = "tool_memories"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    experiment_id: Mapped[str] = mapped_column(String(64), ForeignKey("experiments.id"), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)  # SCHEMA_QUIRK, CONTEXTUAL_LOGIC, WORKFLOW_DEPENDENCY, ERROR_RECOVERY
+    pattern_trigger: Mapped[str] = mapped_column(String(255), nullable=False)
+    learned_rule: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0.85)
+    observation_count: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    experiment: Mapped["ExperimentModel"] = relationship("ExperimentModel", back_populates="memories")

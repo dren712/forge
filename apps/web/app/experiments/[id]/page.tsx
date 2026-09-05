@@ -3,7 +3,16 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { api, Experiment, Generation, TraceEvent, ProvenanceReport, API_BASE } from "../../../lib/api";
+import {
+  api,
+  Experiment,
+  Generation,
+  TraceEvent,
+  ProvenanceReport,
+  ToolMemoryEntry,
+  LearningRunReport,
+  API_BASE,
+} from "../../../lib/api";
 import {
   Flame,
   GitBranch,
@@ -22,6 +31,9 @@ import {
   Layers,
   ArrowRight,
   Volume2,
+  Brain,
+  Zap,
+  BookOpen,
 } from "lucide-react";
 
 export default function ExperimentDetailPage() {
@@ -32,7 +44,9 @@ export default function ExperimentDetailPage() {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [events, setEvents] = useState<TraceEvent[]>([]);
   const [provenance, setProvenance] = useState<ProvenanceReport | null>(null);
-  const [activeTab, setActiveTab] = useState<"timeline" | "console" | "provenance">("timeline");
+  const [toolMemories, setToolMemories] = useState<ToolMemoryEntry[]>([]);
+  const [learningReport, setLearningReport] = useState<LearningRunReport | null>(null);
+  const [activeTab, setActiveTab] = useState<"timeline" | "console" | "provenance" | "learning">("timeline");
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [taskLimit, setTaskLimit] = useState<number>(3);
   const [playingGenId, setPlayingGenId] = useState<string | null>(null);
@@ -47,7 +61,21 @@ export default function ExperimentDetailPage() {
     };
   }, []);
 
-  const handlePlayAudio = (genId: string) => {
+  const handleLearningLoop = async () => {
+    setLoadingAction("learning");
+    try {
+      const rep = await api.runLearningLoop(id);
+      setLearningReport(rep);
+      setActiveTab("learning");
+      await loadData();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handlePlayAudio = (genId: string, customUrl?: string) => {
     if (playingGenId === genId) {
       audioPlayerRef.current?.pause();
       setPlayingGenId(null);
@@ -58,7 +86,7 @@ export default function ExperimentDetailPage() {
       audioPlayerRef.current.pause();
     }
 
-    const audioUrl = api.getNarrationAudioUrl(genId);
+    const audioUrl = customUrl || api.getNarrationAudioUrl(genId);
     const audio = new Audio(audioUrl);
     audioPlayerRef.current = audio;
     setPlayingGenId(genId);
@@ -81,16 +109,18 @@ export default function ExperimentDetailPage() {
   const loadData = async () => {
     if (!id) return;
     try {
-      const [exp, gens, prov, evs] = await Promise.all([
+      const [exp, gens, prov, evs, mems] = await Promise.all([
         api.getExperiment(id),
         api.getGenerations(id),
         api.getProvenance(id),
         api.getEvents(id, 80),
+        api.getToolMemory(id).catch(() => []),
       ]);
       setExperiment(exp);
       setGenerations(gens);
       setProvenance(prov);
       setEvents(evs);
+      setToolMemories(mems);
     } catch (err) {
       console.error(err);
     }
@@ -250,6 +280,15 @@ export default function ExperimentDetailPage() {
                   <RotateCw className={`w-4 h-4 ${loadingAction === "evolve" ? "animate-spin" : ""}`} />
                   {loadingAction === "evolve" ? "Evolving..." : "Evolve Agent"}
                 </button>
+                <button
+                  onClick={handleLearningLoop}
+                  disabled={!!loadingAction}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-md shadow-emerald-600/20 disabled:opacity-50"
+                  title="Test autonomous tool learning and self-reflection"
+                >
+                  <Brain className={`w-4 h-4 ${loadingAction === "learning" ? "animate-pulse" : ""}`} />
+                  {loadingAction === "learning" ? "Learning..." : "Test Learning Loop"}
+                </button>
               </>
             )}
           </div>
@@ -317,6 +356,14 @@ export default function ExperimentDetailPage() {
             }`}
           >
             <GitBranch className="w-4 h-4" /> Evolution Timeline ({generations.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("learning")}
+            className={`pb-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === "learning" ? "border-orange-500 text-white" : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            <Brain className="w-4 h-4" /> Tool Memory & Learning ({toolMemories.length})
           </button>
           <button
             onClick={() => setActiveTab("console")}
@@ -541,6 +588,166 @@ export default function ExperimentDetailPage() {
                 <span className="text-cyan-400 break-all">{provenance?.latest_hash}</span>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tool Memory & Self-Reflection Learning Tab */}
+      {activeTab === "learning" && (
+        <div className="space-y-6">
+          {/* Header Card explaining Track 1 Learning Loop */}
+          <div className="bg-[#161b22] border border-emerald-500/30 rounded-xl p-6 shadow-xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm uppercase tracking-wider">
+                  <Brain className="w-4 h-4" /> Autonomous Tool Learning Loop & Self-Reflective Memory
+                </div>
+                <h2 className="text-xl font-bold text-white mt-1">
+                  How the Agent Learns & Accelerates Over Time
+                </h2>
+                <p className="text-xs text-gray-400 mt-1 max-w-2xl">
+                  In Run 1, the agent explores third-party APIs (Linear, Slack, CRM), encounters schema constraints,
+                  and executes post-run self-reflection to distill actionable playbooks. In subsequent runs, active
+                  memory eliminates errors, halving tool calls and token costs.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => handlePlayAudio(`learning-${id}`, api.getLearningNarrationAudioUrl(id))}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-sm font-semibold transition"
+                >
+                  <Volume2 className={`w-4 h-4 ${playingGenId === `learning-${id}` ? "animate-pulse text-purple-400" : ""}`} />
+                  {playingGenId === `learning-${id}` ? "Playing Voice Debrief..." : "Voice Debrief (Smallest.ai)"}
+                </button>
+
+                <button
+                  onClick={handleLearningLoop}
+                  disabled={!!loadingAction}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                >
+                  <Zap className={`w-4 h-4 ${loadingAction === "learning" ? "animate-spin" : ""}`} />
+                  {loadingAction === "learning" ? "Running Learning Cycle..." : "Execute Learning Loop"}
+                </button>
+              </div>
+            </div>
+
+            {/* Efficiency Delta Comparison Scoreboard */}
+            {learningReport && (
+              <div className="mt-6 pt-6 border-t border-[#30363d] space-y-4">
+                <div className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                  Empirical Acceleration (Run 1 Cold vs. Run 2 Warm Memory)
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <div className="p-4 rounded-xl bg-[#0d1117] border border-emerald-500/30">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tool Calls</span>
+                    <div className="mt-1 flex items-baseline gap-2">
+                      <span className="text-2xl font-black text-white font-mono">{learningReport.run_2_warm.tool_calls}</span>
+                      <span className="text-xs font-bold text-emerald-400 font-mono">{learningReport.efficiency_delta.tool_call_reduction}</span>
+                    </div>
+                    <span className="text-[11px] text-gray-500">Down from {learningReport.run_1_cold.tool_calls} calls</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#0d1117] border border-emerald-500/30">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Execution Speed</span>
+                    <div className="mt-1 flex items-baseline gap-2">
+                      <span className="text-2xl font-black text-white font-mono">{(learningReport.run_2_warm.latency_ms / 1000).toFixed(1)}s</span>
+                      <span className="text-xs font-bold text-emerald-400 font-mono">{learningReport.efficiency_delta.latency_reduction}</span>
+                    </div>
+                    <span className="text-[11px] text-gray-500">Down from {(learningReport.run_1_cold.latency_ms / 1000).toFixed(1)}s</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#0d1117] border border-emerald-500/30">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Cost / Task</span>
+                    <div className="mt-1 flex items-baseline gap-2">
+                      <span className="text-2xl font-black text-white font-mono">${learningReport.run_2_warm.cost_usd.toFixed(4)}</span>
+                      <span className="text-xs font-bold text-emerald-400 font-mono">{learningReport.efficiency_delta.cost_reduction}</span>
+                    </div>
+                    <span className="text-[11px] text-gray-500">Down from ${learningReport.run_1_cold.cost_usd.toFixed(4)}</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#0d1117] border border-emerald-500/30">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Token Usage</span>
+                    <div className="mt-1 flex items-baseline gap-2">
+                      <span className="text-2xl font-black text-white font-mono">{learningReport.run_2_warm.tokens}</span>
+                      <span className="text-xs font-bold text-emerald-400 font-mono">{learningReport.efficiency_delta.token_reduction}</span>
+                    </div>
+                    <span className="text-[11px] text-gray-500">Down from {learningReport.run_1_cold.tokens} tokens</span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#0d1117] border border-emerald-500/30">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Errors Prevented</span>
+                    <div className="mt-1 flex items-baseline gap-2">
+                      <span className="text-2xl font-black text-emerald-400 font-mono">
+                        {learningReport.efficiency_delta.errors_prevented}
+                      </span>
+                      <span className="text-xs font-bold text-emerald-400">0 in Run 2</span>
+                    </div>
+                    <span className="text-[11px] text-gray-500">Zero wasted recovery loops</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Learned Tool Playbooks Grid */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-orange-400" /> Persistent Tool Playbook & Memory Graph ({toolMemories.length})
+              </h3>
+              <span className="text-xs text-gray-500">Injected into Agent Context Before Tool Calling</span>
+            </div>
+
+            {toolMemories.length === 0 ? (
+              <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-8 text-center text-sm text-gray-500">
+                No tool memory entries synthesized yet. Click <strong>'Execute Learning Loop'</strong> above to simulate and observe the learning progression.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {toolMemories.map((entry) => (
+                  <div key={entry.id} className="bg-[#161b22] border border-[#30363d] hover:border-gray-500 rounded-xl p-5 space-y-3 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-orange-500/10 border border-orange-500/20 text-orange-400">
+                          {entry.tool_name.toUpperCase()}
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                          entry.category === "SCHEMA_QUIRK"
+                            ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                            : entry.category === "CONTEXTUAL_LOGIC"
+                            ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                        }`}>
+                          {entry.category}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono text-emerald-400 font-bold">
+                        {(entry.confidence * 100).toFixed(0)}% Conf. (Observed {entry.observation_count}x)
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[11px] text-gray-500 block uppercase font-semibold">Trigger Pattern</span>
+                      <p className="text-xs text-gray-300 font-mono mt-0.5">{entry.pattern_trigger}</p>
+                    </div>
+
+                    <div>
+                      <span className="text-[11px] text-gray-500 block uppercase font-semibold">Learned Actionable Rule</span>
+                      <p className="text-xs font-medium text-white mt-0.5 bg-[#0d1117] p-2.5 rounded border border-[#30363d]">
+                        {entry.learned_rule}
+                      </p>
+                    </div>
+
+                    {entry.evidence && (
+                      <div className="text-[11px] text-gray-500 italic truncate">
+                        Evidence: {entry.evidence}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

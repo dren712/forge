@@ -49,6 +49,9 @@ class TensorMuxProvider(LLMProvider):
                 "TENSORMUX_API_KEY is not configured. Please set TENSORMUX_API_KEY in .env or environment."
             )
 
+        if isinstance(messages, str):
+            messages = [{"role": "user", "content": messages}]
+
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": messages,

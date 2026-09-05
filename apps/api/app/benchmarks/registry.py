@@ -1,12 +1,14 @@
 from typing import Dict
 from app.benchmarks.base import Benchmark
 from app.benchmarks.software_engineering import SoftwareEngineeringBenchmark
+from app.benchmarks.third_party_benchmark import ThirdPartyAppBenchmark
 
 
 class BenchmarkRegistry:
     def __init__(self):
         self._benchmarks: Dict[str, Benchmark] = {}
         self.register(SoftwareEngineeringBenchmark())
+        self.register(ThirdPartyAppBenchmark())
 
     def register(self, bench: Benchmark) -> None:
         self._benchmarks[bench.name] = bench

@@ -15,6 +15,7 @@ from app.evaluation.failure_analyzer import FailureAnalyzer, FailureAnalysis
 from app.evolution.mutation import Mutation
 from app.evolution.mutation_generator import MutationGenerator
 from app.evolution.acceptance import AcceptanceEngine, AcceptanceDecision
+from app.memory.tool_memory import ToolMemoryStore
 from app.tracing.recorder import EventRecorder
 from app.tracing.events import EventType
 
@@ -27,6 +28,7 @@ class EvolutionEngine:
         provider: LLMProvider,
         workspaces_root: Path | None = None,
         recorder: EventRecorder | None = None,
+        memory_store: ToolMemoryStore | None = None,
     ):
         self.experiment_id = experiment_id
         self.benchmark = benchmark
@@ -34,6 +36,7 @@ class EvolutionEngine:
         self.workspaces_root = workspaces_root or (settings.root_dir / "workspaces" / experiment_id)
         self.workspaces_root.mkdir(parents=True, exist_ok=True)
         self.recorder = recorder or EventRecorder(experiment_id)
+        self.memory_store = memory_store or ToolMemoryStore(experiment_id)
         self.analyzer = FailureAnalyzer(provider)
         self.mutator = MutationGenerator(provider)
         self.acceptance = AcceptanceEngine()
@@ -50,7 +53,13 @@ class EvolutionEngine:
         tasks = task_subset or self.benchmark.list_tasks()
         task_metrics: list[ExecutionMetrics] = []
         failures: list[FailureAnalysis] = []
-        runtime = AgentRuntime(spec=spec, provider=self.provider, tool_registry=default_registry, recorder=self.recorder)
+        runtime = AgentRuntime(
+            spec=spec,
+            provider=self.provider,
+            tool_registry=default_registry,
+            recorder=self.recorder,
+            memory_store=self.memory_store,
+        )
 
         await self.recorder.emit(
             EventType.GENERATION_CREATED,

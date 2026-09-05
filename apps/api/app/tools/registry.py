@@ -5,6 +5,7 @@ from app.tools.file_editor import FileEditorTool
 from app.tools.shell import ShellTool
 from app.tools.test_runner import TestRunnerTool
 from app.tools.search import SearchTool
+from app.tools.third_party_apps import LinearIssueTool, SlackChannelTool, CustomerCRMTool
 
 
 class ToolRegistry:
@@ -16,6 +17,10 @@ class ToolRegistry:
         self.register(ShellTool())
         self.register(TestRunnerTool())
         self.register(SearchTool())
+        # Register third-party app tools for Track 1
+        self.register(LinearIssueTool())
+        self.register(SlackChannelTool())
+        self.register(CustomerCRMTool())
 
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool

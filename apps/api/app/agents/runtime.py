@@ -10,6 +10,8 @@ from app.tools.registry import ToolRegistry, default_registry
 from app.providers.base import LLMProvider
 from app.tracing.recorder import EventRecorder
 from app.tracing.events import EventType
+from app.memory.tool_memory import ToolMemoryStore
+from app.agents.reflection import ToolReflectionEngine
 
 
 class AgentRuntime:
@@ -19,12 +21,14 @@ class AgentRuntime:
         provider: LLMProvider,
         tool_registry: ToolRegistry | None = None,
         recorder: EventRecorder | None = None,
+        memory_store: ToolMemoryStore | None = None,
     ):
         self.spec = spec
         self.provider = provider
         self.registry = tool_registry or default_registry
         self.recorder = recorder
         self.verifier = AgentVerifier(spec.verifier)
+        self.memory_store = memory_store
 
     async def _emit_event(
         self,
@@ -53,6 +57,12 @@ class AgentRuntime:
             f"Planner Mode: {self.spec.planner.type}.\n"
             f"Verifier Mode: {self.spec.verifier.type}."
         )
+
+        if self.memory_store:
+            playbook_text = self.memory_store.format_for_prompt(self.spec.tools)
+            if playbook_text:
+                system_instruction += f"\n\n{playbook_text}"
+
         if self.spec.verifier.type in ("mandatory_tests", "strict_test_gate"):
             system_instruction += (
                 "\nCRITICAL REQUIREMENT: You MUST run automated tests using the 'test_runner' tool "
@@ -274,5 +284,35 @@ class AgentRuntime:
             generation_id,
             execution_id,
         )
+
+        # Autonomous Self-Reflection & Tool Memory Learning Loop
+        if self.memory_store:
+            await self._emit_event(
+                EventType.SELF_REFLECTION_STARTED,
+                {"tools": self.spec.tools, "tool_results_count": len(state.tool_results)},
+                generation_id,
+                execution_id,
+            )
+            reflection_report = ToolReflectionEngine.reflect_on_execution(
+                state=state,
+                memory_store=self.memory_store,
+                model_name=self.spec.model,
+            )
+            for entry in reflection_report.entries:
+                await self._emit_event(
+                    EventType.TOOL_PLAYBOOK_LEARNED,
+                    entry.model_dump(),
+                    generation_id,
+                    execution_id,
+                )
+            await self._emit_event(
+                EventType.SELF_REFLECTION_COMPLETED,
+                {
+                    "discovered_rules_count": reflection_report.discovered_rules_count,
+                    "summary": reflection_report.summary,
+                },
+                generation_id,
+                execution_id,
+            )
 
         return state

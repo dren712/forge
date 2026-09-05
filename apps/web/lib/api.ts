@@ -89,6 +89,53 @@ export async function fetchJson<T>(endpoint: string, options?: RequestInit): Pro
   return res.json();
 }
 
+export interface ToolMemoryEntry {
+  id: string;
+  experiment_id: string;
+  tool_name: string;
+  category: "SCHEMA_QUIRK" | "CONTEXTUAL_LOGIC" | "WORKFLOW_DEPENDENCY" | "ERROR_RECOVERY" | string;
+  pattern_trigger: string;
+  learned_rule: string;
+  evidence?: string;
+  confidence: number;
+  observation_count: number;
+  created_at: string;
+}
+
+export interface LearningRunReport {
+  experiment_id: string;
+  status: string;
+  run_1_cold: {
+    description: string;
+    tool_calls: number;
+    errors_encountered: number;
+    latency_ms: number;
+    tokens: number;
+    cost_usd: number;
+    accuracy: number;
+    failures_observed: string[];
+  };
+  run_2_warm: {
+    description: string;
+    tool_calls: number;
+    errors_encountered: number;
+    latency_ms: number;
+    tokens: number;
+    cost_usd: number;
+    accuracy: number;
+    failures_observed: string[];
+  };
+  efficiency_delta: {
+    tool_call_reduction: string;
+    latency_reduction: string;
+    token_reduction: string;
+    cost_reduction: string;
+    accuracy_gain: string;
+    errors_prevented: number;
+  };
+  learned_playbooks: ToolMemoryEntry[];
+}
+
 export const api = {
   getHealth: () => fetchJson<{ status: string; product: string }>("/health"),
   getExperiments: () => fetchJson<Experiment[]>("/experiments"),
@@ -110,4 +157,8 @@ export const api = {
   getBenchmarks: () => fetchJson<any[]>("/benchmarks"),
   getTools: () => fetchJson<any[]>("/tools"),
   getNarrationAudioUrl: (genId: string) => `${API_BASE}/generations/${genId}/narrate`,
+
+  getToolMemory: (id: string) => fetchJson<ToolMemoryEntry[]>(`/experiments/${id}/tool-memory`),
+  runLearningLoop: (id: string) => fetchJson<LearningRunReport>(`/experiments/${id}/learning-run`, { method: "POST" }),
+  getLearningNarrationAudioUrl: (expId: string) => `${API_BASE}/experiments/${expId}/learning-narrate`,
 };
