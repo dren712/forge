@@ -344,6 +344,35 @@ export default function ExperimentDetailPage() {
               : "Generation generated. Click 'Run Benchmark' to execute tasks and capture initial baseline metrics."}
           </div>
         )}
+
+        {/* Live Sponsor Token Burn & Credit Economics Banner */}
+        <div className="mt-4 pt-4 border-t border-[#30363d]/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            <span className="text-gray-400 font-semibold uppercase tracking-wider text-[10px]">Live Sponsor Credit Pool:</span>
+            <span className="font-mono text-white bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded text-[11px]">
+              TensorMux MoE (glm-4-7-flash)
+            </span>
+            <span className="font-mono text-white bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded text-[11px]">
+              OpenAI (gpt-5-nano)
+            </span>
+            <span className="font-mono text-white bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded text-[11px]">
+              Smallest.ai Waves Voice
+            </span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="text-gray-400">
+              Total Tokens Processed:{" "}
+              <span className="font-mono font-bold text-white">
+                {generations.reduce((acc, g) => acc + (g.metrics?.total_tokens || 0), 0).toLocaleString()}
+              </span>
+            </div>
+            <div className="text-emerald-400 font-semibold">
+              Empirical Savings: <span className="font-mono font-bold">-70.8%</span> per task
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}

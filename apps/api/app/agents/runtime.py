@@ -40,6 +40,35 @@ class AgentRuntime:
         if self.recorder:
             await self.recorder.emit(event_type, payload, generation_id, execution_id)
 
+    def _extract_embedded_tool_calls(self, content: str) -> list[Any]:
+        import re, json
+        from app.providers.base import ToolCallItem
+        items = []
+        blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+        for b in blocks:
+            try:
+                data = json.loads(b)
+                if "tool" in data and data["tool"] in self.spec.tools:
+                    items.append(ToolCallItem(id=f"call_{int(time.time()*1000)}", name=data["tool"], arguments=data.get("arguments", {})))
+                elif "action" in data:
+                    for t in self.spec.tools:
+                        tool_obj = self.registry.get(t)
+                        if tool_obj and "enum" in tool_obj.input_schema.get("properties", {}).get("action", {}):
+                            if data["action"] in tool_obj.input_schema["properties"]["action"]["enum"]:
+                                items.append(ToolCallItem(id=f"call_{int(time.time()*1000)}", name=t, arguments=data))
+                                break
+            except Exception:
+                pass
+        react_matches = re.findall(r"Action:\s*(\w+)\s*\nAction Input:\s*(\{.*?\})", content, re.DOTALL)
+        for tname, arg_str in react_matches:
+            if tname in self.spec.tools:
+                try:
+                    args = json.loads(arg_str)
+                    items.append(ToolCallItem(id=f"call_{int(time.time()*1000)}", name=tname, arguments=args))
+                except Exception:
+                    pass
+        return items
+
     async def run(
         self,
         goal: str,
@@ -142,8 +171,12 @@ class AgentRuntime:
                 execution_id,
             )
 
-            # Check if model produced tool calls
-            if llm_response.tool_calls:
+            # Check if model produced tool calls (native or embedded)
+            effective_tool_calls = list(llm_response.tool_calls)
+            if not effective_tool_calls and llm_response.content:
+                effective_tool_calls = self._extract_embedded_tool_calls(llm_response.content)
+
+            if effective_tool_calls:
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": llm_response.content or "",
@@ -153,13 +186,13 @@ class AgentRuntime:
                             "type": "function",
                             "function": {"name": tc.name, "arguments": tc.arguments},
                         }
-                        for tc in llm_response.tool_calls
+                        for tc in effective_tool_calls
                     ],
                 }
                 state.messages.append(assistant_msg)
 
                 # Execute each tool call
-                for tc in llm_response.tool_calls:
+                for tc in effective_tool_calls:
                     state.tool_call_count += 1
                     tool = self.registry.get(tc.name)
 

@@ -104,7 +104,44 @@ class ToolReflectionEngine:
                         )
                         discovered.append(entry)
 
-            # ----------------- 4. GENERAL PYTHON / TEST RUNNER RULES -----------------
+            # ----------------- 4. GITHUB API POLICIES -----------------
+            elif tool_name == "github_api":
+                if "Protected branch policy violation" in output or "branch_naming_policy_violation" in str(res.get("error")):
+                    entry = memory_store.add_or_update(
+                        tool_name="github_api",
+                        category="WORKFLOW_DEPENDENCY",
+                        pattern_trigger="create_pull_request head_branch",
+                        learned_rule="GitHub branch protection requires head branches to start with 'fix/', 'feat/', or 'hotfix/'. Never commit un-prefixed branches.",
+                        evidence=output[:150],
+                        confidence=0.95,
+                    )
+                    discovered.append(entry)
+
+                if "PR title policy violation" in output or "pr_title_policy_violation" in str(res.get("error")):
+                    entry = memory_store.add_or_update(
+                        tool_name="github_api",
+                        category="SCHEMA_QUIRK",
+                        pattern_trigger="create_pull_request title",
+                        learned_rule="GitHub PR title must include issue ticket tag in brackets e.g. '[LIN-101] Fix DB pool' or '[HOTFIX] Patch'.",
+                        evidence=output[:150],
+                        confidence=0.95,
+                    )
+                    discovered.append(entry)
+
+            # ----------------- 5. SENTRY OBSERVABILITY RULES -----------------
+            elif tool_name == "sentry_api":
+                if "min 15 characters" in output or "invalid_resolution_note" in str(res.get("error")):
+                    entry = memory_store.add_or_update(
+                        tool_name="sentry_api",
+                        category="SCHEMA_QUIRK",
+                        pattern_trigger="resolve_incident resolution_note",
+                        learned_rule="Sentry incident resolution requires a detailed 'resolution_note' of at least 15 characters explaining the fix.",
+                        evidence=output[:150],
+                        confidence=0.95,
+                    )
+                    discovered.append(entry)
+
+            # ----------------- 6. GENERAL PYTHON / TEST RUNNER RULES -----------------
             elif tool_name == "test_runner":
                 if not success and "FAILED" in output:
                     entry = memory_store.add_or_update(

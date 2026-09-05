@@ -6,6 +6,7 @@ from app.tools.shell import ShellTool
 from app.tools.test_runner import TestRunnerTool
 from app.tools.search import SearchTool
 from app.tools.third_party_apps import LinearIssueTool, SlackChannelTool, CustomerCRMTool
+from app.tools.devops_tools import GitHubTool, SentryObservabilityTool
 
 
 class ToolRegistry:
@@ -21,6 +22,8 @@ class ToolRegistry:
         self.register(LinearIssueTool())
         self.register(SlackChannelTool())
         self.register(CustomerCRMTool())
+        self.register(GitHubTool())
+        self.register(SentryObservabilityTool())
 
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
