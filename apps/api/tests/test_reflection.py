@@ -268,3 +268,86 @@ def test_repeated_observation_reinforces_confidence():
     assert entry.observation_count == 2
     assert entry.confidence == 1.0  # Boosted from 0.95 + 0.05
 
+
+def test_failure_to_reflection_to_memory_integration():
+    """
+    Integration test proving:
+    failure → reflection → memory record exists
+    Only validated reflection results are persisted, duplicate knowledge is handled deterministically,
+    confidence is updated deterministically, and original evidence reference is strictly preserved.
+    """
+    store = ToolMemoryStore(experiment_id="exp_failure_to_mem_integration")
+    assert store.get_entries() == []
+
+    # Step 1: Execution failure occurs (Sentry resolution note too short)
+    tool_failure_output = "HTTP 422 Unprocessable Entity: 'resolution_note' must be detailed (min 15 characters)."
+    tool_results = [
+        {
+            "tool": "sentry_api",
+            "success": False,
+            "error": "invalid_resolution_note",
+            "output": tool_failure_output,
+            "arguments": {"action": "resolve_incident", "issue_id": "ISSUE-100", "resolution_note": "Fixed"},
+        }
+    ]
+    tool_errors = ["Error 422: invalid_resolution_note"]
+
+    # Step 2: Reflection triggered with trace inputs
+    persisted = ToolReflectionEngine.reflect_and_persist(
+        memory_store=store,
+        tool_results=tool_results,
+        tool_errors=tool_errors,
+        task_context="Resolve production incident in Sentry",
+    )
+
+    # Step 3: Memory record exists and is validated
+    assert len(persisted) == 1
+    stored_entries = store.get_entries()
+    assert len(stored_entries) == 1
+
+    record = stored_entries[0]
+    assert record.tool_name == "sentry_api"
+    assert record.category == "SCHEMA_QUIRK"
+    assert "resolution_note" in record.pattern_trigger
+    assert "at least 15 characters" in record.learned_rule
+    assert record.evidence == tool_failure_output[:150]
+    assert record.confidence == 0.95
+    assert record.observation_count == 1
+
+    # Step 4: Prove duplicate knowledge handling and evidence preservation
+    # Subsequent execution encounters repeat failure with slightly different message
+    second_failure = [
+        {
+            "tool": "sentry_api",
+            "success": False,
+            "error": "invalid_resolution_note",
+            "output": "HTTP 422 Unprocessable Entity: 'resolution_note' must be detailed (min 15 characters). Received 5 chars.",
+            "arguments": {"action": "resolve_incident", "issue_id": "ISSUE-101", "resolution_note": "Done!"},
+        }
+    ]
+
+    persisted_repeat = ToolReflectionEngine.reflect_and_persist(
+        memory_store=store,
+        tool_results=second_failure,
+    )
+
+    # Must NOT create a duplicate record
+    assert len(store.get_entries()) == 1
+    updated_record = store.get_entries()[0]
+    assert updated_record.observation_count == 2
+    # Confidence updated deterministically (+0.05 up to 1.0)
+    assert updated_record.confidence == 1.0
+    # Original evidence reference strictly preserved
+    assert updated_record.evidence == tool_failure_output[:150]
+
+    # Step 5: Prove unvalidated/invalid categories cannot be persisted
+    with pytest.raises(ValueError) as exc:
+        store.save_playbook(
+            tool_name="linear_api",
+            category="INVALID_UNVALIDATED_CATEGORY",
+            pattern_trigger="test",
+            learned_rule="test rule",
+        )
+    assert "Invalid memory category" in str(exc.value)
+
+

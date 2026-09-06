@@ -102,6 +102,17 @@ class ToolMemoryStore:
             confidence=confidence,
         )
 
+    def save_reflected_rule(self, rule: Any) -> ToolPlaybookEntry:
+        """Saves a validated ReflectedRule into persistent memory."""
+        return self.save_playbook(
+            tool_name=getattr(rule, "tool_name"),
+            category=getattr(rule, "category"),
+            pattern_trigger=getattr(rule, "pattern_trigger"),
+            learned_rule=getattr(rule, "learned_rule"),
+            evidence=getattr(rule, "evidence", None),
+            confidence=getattr(rule, "confidence", 0.85),
+        )
+
     def add_or_update(
         self,
         tool_name: str,
@@ -111,20 +122,28 @@ class ToolMemoryStore:
         evidence: Optional[str] = None,
         confidence: float = 0.85,
     ) -> ToolPlaybookEntry:
+        valid_categories = ("SCHEMA_QUIRK", "CONTEXTUAL_LOGIC", "WORKFLOW_DEPENDENCY", "ERROR_RECOVERY")
+        if category not in valid_categories:
+            raise ValueError(
+                f"Invalid memory category '{category}'. Only validated categories {valid_categories} can be persisted."
+            )
+
         now_iso = datetime.now(timezone.utc).isoformat()
         clamped_conf = round(max(0.0, min(1.0, confidence)), 3)
 
-        # Check if an existing entry shares the same tool and pattern
+        # Check if an existing entry shares the same tool and pattern trigger (deterministic deduplication)
         for entry in self._entries:
             if entry.tool_name == tool_name and (
                 entry.pattern_trigger.lower() in pattern_trigger.lower()
                 or pattern_trigger.lower() in entry.pattern_trigger.lower()
             ):
                 entry.observation_count += 1
+                # Deterministic arithmetic confidence update (+0.05 per observation, clamped to 1.0)
                 entry.confidence = round(min(1.0, entry.confidence + 0.05), 3)
                 entry.learned_rule = learned_rule  # update with latest refined rule
                 entry.updated_at = now_iso
-                if evidence:
+                # Preserve original evidence reference from the first discovery
+                if not entry.evidence and evidence:
                     entry.evidence = evidence
                 return entry
 

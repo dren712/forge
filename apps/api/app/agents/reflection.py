@@ -302,6 +302,35 @@ class ToolReflectionEngine:
         return results
 
     @classmethod
+    def reflect_and_persist(
+        cls,
+        memory_store: ToolMemoryStore,
+        execution_trace: list[dict[str, Any]] | None = None,
+        tool_errors: list[str] | None = None,
+        tool_results: list[dict[str, Any]] | None = None,
+        task_context: Optional[str] = None,
+        candidate_rules: list[dict[str, Any]] | None = None,
+    ) -> list[ToolPlaybookEntry]:
+        """
+        Connects execution failure directly to persistent memory:
+        execution failure -> reflection -> validated knowledge -> memory_store.save_reflected_rule()
+        Only validated reflection results can be persisted.
+        """
+        reflected_rules = cls.reflect(
+            execution_trace=execution_trace,
+            tool_errors=tool_errors,
+            tool_results=tool_results,
+            task_context=task_context,
+            candidate_rules=candidate_rules,
+        )
+
+        persisted: list[ToolPlaybookEntry] = []
+        for r in reflected_rules:
+            entry = memory_store.save_reflected_rule(r)
+            persisted.append(entry)
+        return persisted
+
+    @classmethod
     def reflect_on_execution(
         cls,
         state: AgentState,
@@ -315,17 +344,13 @@ class ToolReflectionEngine:
             task_context=state.goal,
         )
 
-        discovered: list[ToolPlaybookEntry] = []
-        for r in reflected_rules:
-            entry = memory_store.save_playbook(
-                tool_name=r.tool_name,
-                category=r.category,
-                pattern_trigger=r.pattern_trigger,
-                learned_rule=r.learned_rule,
-                evidence=r.evidence,
-                confidence=r.confidence,
-            )
-            discovered.append(entry)
+        discovered = cls.reflect_and_persist(
+            memory_store=memory_store,
+            execution_trace=state.observations,
+            tool_errors=state.errors,
+            tool_results=state.tool_results,
+            task_context=state.goal,
+        )
 
         summary_text = (
             f"Self-reflection completed: Distilled {len(discovered)} operational rule(s) from execution trace. "
