@@ -69,8 +69,7 @@ async def test_candidate_evaluation_pipeline_integration():
         assert candidate_gen.benchmark_id == g0.benchmark_id
         assert candidate_gen.benchmark_version == g0.benchmark_version
         assert candidate_gen.mutation_id is not None
-        assert candidate_gen.status == "COMPLETED"
-        assert candidate_gen.rejection_reason is None
+        assert candidate_gen.status in ("ACCEPTED", "REJECTED"), "Candidate must have acceptance decision status"
 
         # 5. Verify mutation was generated and persisted
         mut_stmt = select(MutationModel).where(MutationModel.id == candidate_gen.mutation_id)
@@ -101,9 +100,12 @@ async def test_candidate_evaluation_pipeline_integration():
         assert g0_refreshed.agent_spec == parent_spec_snapshot
         assert g0_refreshed.status == parent_status_snapshot
 
-        # 8. Invariant: No acceptance/rejection implemented yet (best_generation remains G0)
+        # 8. best_generation_id reflects acceptance decision
         await db.refresh(exp)
-        assert exp.best_generation_id == g0.id, "best_generation_id must not be altered during candidate evaluation"
+        if candidate_gen.status == "ACCEPTED":
+            assert exp.best_generation_id == candidate_gen.id, "best_generation_id must be candidate when accepted"
+        else:
+            assert exp.best_generation_id == g0.id, "best_generation_id must remain G0 when candidate rejected"
 
 
 @pytest.mark.asyncio
@@ -146,6 +148,13 @@ async def test_candidate_evaluation_via_api():
         assert cand_data["parent_generation_id"] == g0_id
         assert cand_data["generation_number"] == 1
         assert cand_data["metrics"] is not None
-        assert cand_data["status"] == "COMPLETED"
-        assert cand_data["rejection_reason"] is None
+        assert cand_data["status"] in ("ACCEPTED", "REJECTED"), "Candidate must have acceptance decision status"
         assert cand_data["mutation_id"] is not None
+        # Acceptance decision details must be persisted in metrics
+        assert "acceptance_decision" in cand_data["metrics"]
+        ad = cand_data["metrics"]["acceptance_decision"]
+        assert "accepted" in ad
+        assert "reason" in ad
+        assert "metrics_delta" in ad
+        assert "dominance_result" in ad
+        assert ad["parent_generation_id"] == g0_id

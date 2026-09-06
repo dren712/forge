@@ -401,9 +401,10 @@ class ExperimentService:
         db: AsyncSession, experiment_id: str, generation_id: str, task_limit: int | None = None
     ) -> GenerationModel:
         """
-        FORGE S6-F Candidate Evaluation:
+        FORGE S6-F/S6-H Candidate Evaluation + Acceptance Persistence:
         Connects:
-        current generation -> mutation -> candidate AgentSpec -> benchmark -> candidate metrics.
+        current generation -> mutation -> candidate AgentSpec -> benchmark -> candidate metrics
+        -> acceptance engine -> generation status.
 
         Requirements:
         * runs against the SAME benchmark version and task set as parent
@@ -414,8 +415,12 @@ class ExperimentService:
         * calculates real metrics
         * persists candidate execution results
         * persists candidate metrics
-        * does NOT implement acceptance/rejection yet
-        * does NOT modify parent metrics or best_generation_id
+        * runs Pareto acceptance gate on parent vs candidate metrics
+        * sets candidate status to ACCEPTED or REJECTED
+        * persists decision, reason, metrics_delta, dominance_result
+        * if accepted: updates exp.best_generation_id and exp.current_generation_id
+        * if rejected: parent remains current/best
+        * rejected candidates remain inspectable (never deleted)
         """
         exp_stmt = select(ExperimentModel).where(ExperimentModel.id == experiment_id)
         exp = (await db.execute(exp_stmt)).scalar_one_or_none()
@@ -501,6 +506,11 @@ class ExperimentService:
             task_subset=selected_tasks,
         )
 
+        # --- S6-H: Run Pareto Acceptance Gate ---
+        from app.evolution.acceptance import AcceptanceEngine
+        acceptance_engine = AcceptanceEngine()
+        decision = acceptance_engine.evaluate_candidate(cur_metrics, candidate_metrics)
+
         # Save Mutation
         mutation_db = MutationModel(
             id=mutation.id,
@@ -516,7 +526,7 @@ class ExperimentService:
         )
         db.add(mutation_db)
 
-        # Save candidate generation
+        # Save candidate generation with acceptance decision persisted
         cand_gen_id = str(uuid.uuid4())
         candidate_gen = GenerationModel(
             id=cand_gen_id,
@@ -525,11 +535,22 @@ class ExperimentService:
             generation_number=parent_gen.generation_number + 1,
             agent_spec=candidate_spec.model_dump(),
             mutation_id=mutation.id,
-            metrics=candidate_metrics.model_dump(),
+            metrics={
+                **candidate_metrics.model_dump(),
+                "acceptance_decision": {
+                    "accepted": decision.accepted,
+                    "status": decision.status,
+                    "reason": decision.reason,
+                    "dominance_result": decision.dominance_result.value if hasattr(decision.dominance_result, 'value') else str(decision.dominance_result),
+                    "metrics_delta": decision.metrics_delta,
+                    "parent_generation_id": parent_gen.id,
+                    "candidate_generation_id": cand_gen_id,
+                },
+            },
             benchmark_id=parent_gen.benchmark_id,
             benchmark_version=parent_gen.benchmark_version,
-            status="COMPLETED",
-            rejection_reason=None,
+            status=decision.status,
+            rejection_reason=decision.reason if not decision.accepted else None,
         )
         db.add(candidate_gen)
 
@@ -559,6 +580,11 @@ class ExperimentService:
                     previous_event_hash=ev.previous_event_hash,
                     event_hash=ev.event_hash,
                 ))
+
+        # S6-H: Update experiment pointers based on acceptance decision
+        if decision.accepted:
+            exp.current_generation_id = cand_gen_id
+            exp.best_generation_id = cand_gen_id
 
         # Invariant check: parent metrics must remain completely unmodified
         assert parent_gen.metrics == parent_metrics_snapshot, "Parent metrics must remain unmodified"
