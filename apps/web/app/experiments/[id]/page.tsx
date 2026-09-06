@@ -49,6 +49,11 @@ import {
   ChevronRight,
   Check,
   Filter,
+  Copy,
+  Search,
+  Lock,
+  Link2,
+  Eye,
 } from "lucide-react";
 
 export default function ExperimentDetailPage() {
@@ -88,6 +93,12 @@ export default function ExperimentDetailPage() {
   const [consoleFilter, setConsoleFilter] = useState<"all" | "tools" | "model" | "errors" | "verify">("all");
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+
+  // Provenance Inspector State (FORGE S8-F)
+  const [selectedProvenanceEventId, setSelectedProvenanceEventId] = useState<string | null>(null);
+  const [verifyingProvenance, setVerifyingProvenance] = useState<boolean>(false);
+  const [provenanceSearchQuery, setProvenanceSearchQuery] = useState<string>("");
+  const [copiedProvenanceText, setCopiedProvenanceText] = useState<string | null>(null);
 
   useEffect(() => {
     if (generations.length >= 2) {
@@ -322,6 +333,61 @@ export default function ExperimentDetailPage() {
           category: "system",
         };
     }
+  };
+
+  const handleVerifyProvenance = async () => {
+    setVerifyingProvenance(true);
+    try {
+      const prov = await api.getProvenance(id);
+      setProvenance(prov);
+    } catch (err: any) {
+      console.error("Provenance verification error", err);
+    } finally {
+      setVerifyingProvenance(false);
+    }
+  };
+
+  const handleCopyProvenance = (text: string, label: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedProvenanceText(label);
+      setTimeout(() => setCopiedProvenanceText(null), 2000);
+    }
+  };
+
+  // Safe redaction helper to prevent exposing secrets in event payloads (FORGE S8-F)
+  const sanitizePayload = (obj: any): any => {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj === "string") {
+      if (/^(sk-[a-zA-Z0-9_-]{10,}|ghp_[a-zA-Z0-9]{10,}|Bearer\s+[a-zA-Z0-9_\-\.]{10,})/i.test(obj)) {
+        return "[REDACTED_SECRET]";
+      }
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(sanitizePayload);
+    }
+    if (typeof obj === "object") {
+      const cleaned: Record<string, any> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        const lower = k.toLowerCase();
+        if (
+          lower.includes("secret") ||
+          lower.includes("token") ||
+          lower.includes("password") ||
+          lower.includes("api_key") ||
+          lower.includes("apikey") ||
+          lower.includes("auth") ||
+          lower.includes("credential")
+        ) {
+          cleaned[k] = "[REDACTED_SECRET]";
+        } else {
+          cleaned[k] = sanitizePayload(v);
+        }
+      }
+      return cleaned;
+    }
+    return obj;
   };
 
   const handleSelectGeneration = async (genId: string) => {
@@ -703,6 +769,30 @@ export default function ExperimentDetailPage() {
     return true;
   });
 
+  const firstEvent = events.length > 0 ? events[0] : null;
+  const latestEvent = events.length > 0 ? events[events.length - 1] : null;
+  const selectedProvenanceEvent =
+    events.find((e) => e.event_id === selectedProvenanceEventId) ||
+    latestEvent ||
+    firstEvent ||
+    null;
+  const selectedProvenanceIndex = selectedProvenanceEvent
+    ? events.findIndex((e) => e.event_id === selectedProvenanceEvent.event_id)
+    : -1;
+  const previousEventOfSelected =
+    selectedProvenanceIndex > 0 ? events[selectedProvenanceIndex - 1] : null;
+
+  const filteredProvenanceEvents = events.filter((ev) => {
+    if (!provenanceSearchQuery) return true;
+    const q = provenanceSearchQuery.toLowerCase();
+    return (
+      ev.type.toLowerCase().includes(q) ||
+      ev.event_id.toLowerCase().includes(q) ||
+      ev.event_hash.toLowerCase().includes(q) ||
+      ev.previous_event_hash.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="space-y-6">
       {/* Back Button */}
@@ -1075,7 +1165,17 @@ export default function ExperimentDetailPage() {
               activeTab === "provenance" ? "border-orange-500 text-white" : "border-transparent text-gray-400 hover:text-gray-200"
             }`}
           >
-            <ShieldCheck className="w-4 h-4" /> Cryptographic Provenance
+            <ShieldCheck className="w-4 h-4" /> Provenance Inspector
+            {provenance?.is_valid && !verifyingProvenance && (
+              <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                ✓ Valid
+              </span>
+            )}
+            {provenance && !provenance.is_valid && !verifyingProvenance && (
+              <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                ⚠ Failed
+              </span>
+            )}
           </button>
         </div>
 
@@ -2247,43 +2347,424 @@ export default function ExperimentDetailPage() {
         </div>
       )}
 
-      {/* Cryptographic Provenance View */}
+      {/* Cryptographic Provenance Inspector (FORGE S8-F) */}
       {activeTab === "provenance" && (
-        <div className="space-y-4">
-          <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-6 shadow-md">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  provenance?.is_valid ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+        <div className="space-y-6">
+          {/* Main Verification Status Card */}
+          <div className={`rounded-2xl p-6 border shadow-2xl transition-all ${
+            verifyingProvenance || !provenance
+              ? "bg-[#161b22] border-[#30363d]"
+              : provenance.is_valid
+              ? "bg-gradient-to-r from-[#161b22] to-[#12231c] border-emerald-500/30 shadow-emerald-950/20"
+              : "bg-gradient-to-r from-[#161b22] to-[#251318] border-rose-500/30 shadow-rose-950/20"
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 border ${
+                  verifyingProvenance || !provenance
+                    ? "bg-[#21262d] text-gray-400 border-[#30363d]"
+                    : provenance.is_valid
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-lg shadow-emerald-500/10"
+                    : "bg-rose-500/10 text-rose-400 border-rose-500/30 shadow-lg shadow-rose-500/10"
                 }`}>
-                  <ShieldCheck className="w-6 h-6" />
+                  {verifyingProvenance ? (
+                    <RotateCw className="w-7 h-7 animate-spin text-orange-400" />
+                  ) : !provenance ? (
+                    <ShieldCheck className="w-7 h-7 text-gray-400" />
+                  ) : provenance.is_valid ? (
+                    <Check className="w-8 h-8 text-emerald-400 stroke-[2.5]" />
+                  ) : (
+                    <AlertTriangle className="w-8 h-8 text-rose-400 stroke-[2.5]" />
+                  )}
                 </div>
+
                 <div>
-                  <h3 className="text-base font-bold text-white">
-                    {provenance?.is_valid ? "Provenance Chain Cryptographically Valid" : "Tampering Detected"}
-                  </h3>
-                  <p className="text-xs text-gray-400">
-                    {provenance?.message} ({provenance?.total_events} total events chained via SHA-256)
+                  <div className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                    <ShieldCheck className="w-3.5 h-3.5 text-gray-400" />
+                    Provenance
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-black mt-0.5 flex items-center gap-2 tracking-tight">
+                    {verifyingProvenance ? (
+                      <span className="text-gray-300">Verifying chain...</span>
+                    ) : !provenance ? (
+                      <span className="text-gray-400">Verification pending</span>
+                    ) : provenance.is_valid ? (
+                      <span className="text-emerald-400 flex items-center gap-2">
+                        <span>✓</span> Valid
+                      </span>
+                    ) : (
+                      <span className="text-rose-400 flex items-center gap-2">
+                        <span>⚠</span> Verification failed
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1 max-w-2xl font-mono">
+                    {provenance?.message || (verifyingProvenance ? "Auditing SHA-256 links across all stored events..." : "Click verify to compute cryptographic event hashes.")}
                   </p>
                 </div>
               </div>
 
-              <button
-                onClick={loadData}
-                className="px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#30363d] text-xs text-gray-300 hover:text-white"
-              >
-                Re-verify Chain
-              </button>
+              <div className="flex items-center gap-2.5 self-start sm:self-auto">
+                <button
+                  onClick={handleVerifyProvenance}
+                  disabled={verifyingProvenance}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0d1117] hover:bg-[#21262d] text-gray-200 border border-[#30363d] text-xs font-semibold shadow-md transition cursor-pointer disabled:opacity-50"
+                  title="Run cryptographic verification over full event chain"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${verifyingProvenance ? "animate-spin text-orange-400" : ""}`} />
+                  {verifyingProvenance ? "Auditing..." : "Re-verify Hash Chain"}
+                </button>
+              </div>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-[#30363d] grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
-              <div className="p-3 rounded bg-[#0d1117] border border-[#30363d]">
-                <span className="text-gray-500 block mb-1">Genesis Root Hash</span>
-                <span className="text-gray-300 break-all">{provenance?.genesis_hash}</span>
+            {/* Tamper-evident SHA-256 chain blockquote callout */}
+            <div className="mt-5 p-3.5 rounded-xl bg-[#0d1117]/80 border border-[#30363d] flex items-start gap-3 text-xs text-gray-300">
+              <Lock className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div>
+                  <span className="font-bold text-white">Tamper-evident SHA-256 chain:</span> Each trace event derives its hash deterministically from the predecessor hash and canonical payload representation:
+                </div>
+                <code className="text-cyan-300 font-mono text-[11px] block bg-[#161b22] px-2 py-1 rounded border border-[#21262d]">
+                  H_n = SHA-256( previous_hash + event_type + timestamp + canonical(payload) )
+                </code>
+                <p className="text-[11px] text-gray-400">
+                  Any modified payload, altered hash, reordered event, or deleted record is immediately detected by the verification algorithm.
+                </p>
               </div>
-              <div className="p-3 rounded bg-[#0d1117] border border-[#30363d]">
-                <span className="text-gray-500 block mb-1">Latest Event Hash</span>
-                <span className="text-cyan-400 break-all">{provenance?.latest_hash}</span>
+            </div>
+          </div>
+
+          {/* 5 Primary Summary Metric Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5 text-xs">
+            {/* 1. Total Event Count */}
+            <div className="p-4 rounded-xl bg-[#161b22] border border-[#30363d] space-y-1.5 flex flex-col justify-between">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                Total Event Count
+              </span>
+              <div>
+                <div className="text-2xl font-black font-mono text-white">
+                  {provenance?.total_events !== undefined ? provenance.total_events : events.length}
+                </div>
+                <p className="text-[11px] text-gray-500 font-mono mt-0.5">
+                  Chained records
+                </p>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-mono">
+                100% indexed
+              </span>
+            </div>
+
+            {/* 2. First Event (Genesis) */}
+            <div className="p-4 rounded-xl bg-[#161b22] border border-[#30363d] space-y-1.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                  First Event (Genesis)
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono font-bold">
+                  #0
+                </span>
+              </div>
+              <div>
+                <div className="font-bold text-gray-200 text-xs truncate">
+                  {firstEvent ? firstEvent.type : "N/A"}
+                </div>
+                <div className="text-[11px] text-gray-500 font-mono mt-0.5 truncate">
+                  {firstEvent ? formatEventTime(firstEvent.timestamp) : "--:--:--"}
+                </div>
+              </div>
+              <div className="text-[10px] font-mono text-gray-400 truncate" title={firstEvent?.event_hash || "Genesis"}>
+                Hash: <span className="text-cyan-400">{firstEvent?.event_hash ? `${firstEvent.event_hash.slice(0, 10)}...` : "Genesis"}</span>
+              </div>
+            </div>
+
+            {/* 3. Latest Event (Tip) */}
+            <div className="p-4 rounded-xl bg-[#161b22] border border-[#30363d] space-y-1.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                  Latest Event (Tip)
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono font-bold">
+                  #{events.length > 0 ? events.length - 1 : 0}
+                </span>
+              </div>
+              <div>
+                <div className="font-bold text-gray-200 text-xs truncate">
+                  {latestEvent ? latestEvent.type : "N/A"}
+                </div>
+                <div className="text-[11px] text-gray-500 font-mono mt-0.5 truncate">
+                  {latestEvent ? formatEventTime(latestEvent.timestamp) : "--:--:--"}
+                </div>
+              </div>
+              <div className="text-[10px] font-mono text-gray-400 truncate" title={latestEvent?.event_hash || provenance?.latest_hash || ""}>
+                Hash: <span className="text-cyan-400">{latestEvent?.event_hash ? `${latestEvent.event_hash.slice(0, 10)}...` : provenance?.latest_hash ? `${provenance.latest_hash.slice(0, 10)}...` : "N/A"}</span>
+              </div>
+            </div>
+
+            {/* 4. Hash-Chain Status */}
+            <div className="p-4 rounded-xl bg-[#161b22] border border-[#30363d] space-y-1.5 flex flex-col justify-between">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                Hash-Chain Status
+              </span>
+              <div>
+                <div className="text-sm font-bold font-mono">
+                  {verifyingProvenance ? (
+                    <span className="text-gray-400">Verifying...</span>
+                  ) : !provenance ? (
+                    <span className="text-gray-500">Unverified</span>
+                  ) : provenance.is_valid ? (
+                    <span className="text-emerald-400">Unbroken Chain</span>
+                  ) : (
+                    <span className="text-rose-400">Broken at #{provenance.broken_index}</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-500 font-mono mt-0.5">
+                  Tamper-evident
+                </p>
+              </div>
+              <div className="text-[10px] font-mono text-gray-400 truncate" title={provenance?.genesis_hash}>
+                Root: <span className="text-gray-400">{provenance?.genesis_hash ? `${provenance.genesis_hash.slice(0, 8)}...` : "00000000..."}</span>
+              </div>
+            </div>
+
+            {/* 5. Verification Result */}
+            <div className="p-4 rounded-xl bg-[#161b22] border border-[#30363d] space-y-1.5 flex flex-col justify-between">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                Verification Result
+              </span>
+              <div>
+                <div className="text-sm font-black font-mono">
+                  {verifyingProvenance ? (
+                    <span className="text-gray-400">PENDING</span>
+                  ) : !provenance ? (
+                    <span className="text-gray-500">AWAITING</span>
+                  ) : provenance.is_valid ? (
+                    <span className="text-emerald-400">PASS (Deterministic)</span>
+                  ) : (
+                    <span className="text-rose-400">FAIL (Tamper Detected)</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-400 mt-0.5 truncate" title={provenance?.message}>
+                  {provenance?.message || "Audit required"}
+                </p>
+              </div>
+              <div className="text-[10px] font-mono text-gray-400">
+                Broken index: <strong className={provenance?.broken_index !== null && provenance?.broken_index !== undefined ? "text-rose-400" : "text-emerald-400"}>{provenance?.broken_index !== null && provenance?.broken_index !== undefined ? `#${provenance.broken_index}` : "None"}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Individual Event Inspector */}
+          <div className="bg-[#161b22] border border-[#30363d] rounded-2xl overflow-hidden shadow-xl">
+            <div className="px-5 py-4 border-b border-[#30363d] flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#12151d]">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-orange-400" />
+                  Individual Event Provenance Inspector
+                </h4>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  Select any event in the tamper-evident chain to audit its input hash, canonical payload, and resulting hash
+                </p>
+              </div>
+
+              {/* Event Search / Filter */}
+              <div className="relative w-full md:w-72">
+                <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Filter events by type or hash..."
+                  value={provenanceSearchQuery}
+                  onChange={(e) => setProvenanceSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#30363d] text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-orange-500 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-[#30363d]">
+              {/* Event List / Chain Navigator (5 cols) */}
+              <div className="lg:col-span-5 max-h-[560px] overflow-y-auto divide-y divide-[#21262d]/60 font-mono text-xs">
+                {filteredProvenanceEvents.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    No events match the search filter.
+                  </div>
+                ) : (
+                  filteredProvenanceEvents.map((ev, i) => {
+                    const originalIdx = events.findIndex((e) => e.event_id === ev.event_id);
+                    const isSelected = selectedProvenanceEvent?.event_id === ev.event_id;
+
+                    return (
+                      <div
+                        key={ev.event_id || i}
+                        onClick={() => setSelectedProvenanceEventId(ev.event_id)}
+                        className={`p-3 cursor-pointer transition-colors flex items-center gap-3 ${
+                          isSelected
+                            ? "bg-orange-500/10 border-l-4 border-orange-500"
+                            : "hover:bg-[#21262d]/50"
+                        }`}
+                      >
+                        <span className="text-[10px] font-bold text-gray-500 w-8 shrink-0">
+                          #{originalIdx >= 0 ? originalIdx : i}
+                        </span>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold truncate ${
+                              ev.type.includes("ERROR") || ev.type.includes("FAILURE")
+                                ? "bg-rose-500/20 text-rose-300"
+                                : ev.type.includes("TOOL")
+                                ? "bg-amber-500/20 text-amber-300"
+                                : ev.type.includes("ACCEPTED")
+                                ? "bg-emerald-500/20 text-emerald-300"
+                                : "bg-blue-500/20 text-blue-300"
+                            }`}>
+                              {ev.type}
+                            </span>
+                            <span className="text-[10px] text-gray-500 truncate">
+                              {formatEventTime(ev.timestamp)}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-gray-400 font-mono truncate mt-1">
+                            Hash: <span className="text-cyan-400">{ev.event_hash ? ev.event_hash.slice(0, 14) + "..." : "Genesis"}</span>
+                          </div>
+                        </div>
+
+                        <ChevronRight className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-orange-400" : "text-gray-600"}`} />
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Event Detail & Cryptographic Hash Auditor (7 cols) */}
+              <div className="lg:col-span-7 p-5 space-y-4 max-h-[560px] overflow-y-auto bg-[#0d1117]/60">
+                {selectedProvenanceEvent ? (
+                  <>
+                    {/* Event Metadata Header */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#30363d]">
+                      <div>
+                        <div className="flex items-center gap-2 font-mono">
+                          <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 font-bold text-xs border border-orange-500/30">
+                            Event #{selectedProvenanceIndex >= 0 ? selectedProvenanceIndex : 0}
+                          </span>
+                          <span className="text-white font-bold text-xs">
+                            {selectedProvenanceEvent.type}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-gray-400 font-mono mt-1 flex items-center gap-2">
+                          <span>Time: {new Date(selectedProvenanceEvent.timestamp).toISOString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs font-mono">
+                        <button
+                          onClick={() => handleCopyProvenance(selectedProvenanceEvent.event_hash, "hash")}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#161b22] hover:bg-[#21262d] text-gray-300 border border-[#30363d] transition cursor-pointer text-[11px]"
+                          title="Copy full 64-character SHA-256 event hash"
+                        >
+                          <Copy className="w-3 h-3" />
+                          {copiedProvenanceText === "hash" ? "Copied Hash!" : "Copy Hash"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Hash Continuity Link Verification */}
+                    <div className="p-3.5 rounded-xl bg-[#161b22] border border-[#30363d] space-y-3 font-mono text-xs">
+                      <div className="flex items-center justify-between text-[11px] text-gray-400 pb-1 border-b border-[#21262d]">
+                        <span className="flex items-center gap-1.5 font-bold text-gray-300">
+                          <Link2 className="w-3.5 h-3.5 text-cyan-400" />
+                          Cryptographic Hash Link Verification
+                        </span>
+                        {selectedProvenanceIndex === 0 ? (
+                          <span className="text-purple-400">Genesis State (Root)</span>
+                        ) : previousEventOfSelected && previousEventOfSelected.event_hash === selectedProvenanceEvent.previous_event_hash ? (
+                          <span className="text-emerald-400">✓ Predecessor Link Valid</span>
+                        ) : (
+                          <span className="text-rose-400">⚠ Hash Link Mismatch</span>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1">
+                          <span>PREVIOUS EVENT HASH (H_{selectedProvenanceIndex > 0 ? selectedProvenanceIndex - 1 : "genesis"})</span>
+                          <button
+                            onClick={() => handleCopyProvenance(selectedProvenanceEvent.previous_event_hash, "prev_hash")}
+                            className="hover:text-gray-300 text-[10px]"
+                          >
+                            {copiedProvenanceText === "prev_hash" ? "Copied" : "Copy"}
+                          </button>
+                        </div>
+                        <div className="p-2 rounded bg-[#0d1117] text-gray-300 text-[11px] break-all border border-[#21262d]">
+                          {selectedProvenanceEvent.previous_event_hash || "0".repeat(64)}
+                        </div>
+                      </div>
+
+                      <div className="text-center text-gray-500 text-[10px] flex items-center justify-center gap-2">
+                        <ArrowDown className="w-3 h-3 text-orange-400" />
+                        <span>SHA-256( previous_hash + type + timestamp + canonical_payload )</span>
+                        <ArrowDown className="w-3 h-3 text-orange-400" />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1">
+                          <span>THIS EVENT HASH (H_{selectedProvenanceIndex >= 0 ? selectedProvenanceIndex : 0})</span>
+                          <button
+                            onClick={() => handleCopyProvenance(selectedProvenanceEvent.event_hash, "this_hash")}
+                            className="hover:text-gray-300 text-[10px]"
+                          >
+                            {copiedProvenanceText === "this_hash" ? "Copied" : "Copy"}
+                          </button>
+                        </div>
+                        <div className="p-2 rounded bg-[#0d1117] text-cyan-300 text-[11px] break-all border border-[#21262d] font-bold">
+                          {selectedProvenanceEvent.event_hash || "Unassigned"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sanitized Payload View (Secrets Redacted!) */}
+                    <div className="space-y-1.5 font-mono text-xs">
+                      <div className="flex items-center justify-between text-[11px] text-gray-400">
+                        <span className="flex items-center gap-1.5 font-semibold text-gray-300">
+                          <Lock className="w-3 h-3 text-emerald-400" />
+                          Canonical Event Payload (Secrets Redacted)
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            Safe Display
+                          </span>
+                          <button
+                            onClick={() => handleCopyProvenance(JSON.stringify(sanitizePayload(selectedProvenanceEvent.payload), null, 2), "payload")}
+                            className="hover:text-gray-300 text-[10px] text-gray-500"
+                          >
+                            {copiedProvenanceText === "payload" ? "Copied JSON" : "Copy JSON"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <pre className="p-3.5 rounded-xl bg-[#161b22] text-gray-300 text-[11px] overflow-x-auto border border-[#30363d] leading-relaxed max-h-[220px]">
+                        {JSON.stringify(sanitizePayload(selectedProvenanceEvent.payload), null, 2)}
+                      </pre>
+                    </div>
+
+                    {/* Cross-Link Identifiers */}
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                      <div className="p-2 rounded bg-[#161b22] border border-[#21262d]">
+                        <span className="text-gray-500 block text-[10px]">Generation ID:</span>
+                        <span className="text-gray-300 truncate block">
+                          {selectedProvenanceEvent.generation_id || "None (Root/Genesis)"}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded bg-[#161b22] border border-[#21262d]">
+                        <span className="text-gray-500 block text-[10px]">Execution ID:</span>
+                        <span className="text-gray-300 truncate block">
+                          {selectedProvenanceEvent.execution_id || "None (Lifecycle)"}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-12 text-center text-gray-500 font-mono">
+                    No event selected. Select an event from the sequence list to inspect its provenance.
+                  </div>
+                )}
               </div>
             </div>
           </div>
