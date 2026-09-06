@@ -226,7 +226,7 @@ class AgentRuntime:
         elif self.spec.planner.type == "hierarchical":
             system_instruction += "\nPLANNER INSTRUCTION: Break goals into subgoals, execute with tools, and synthesize results."
 
-        if self.memory_store:
+        if self.memory_store and getattr(self.spec.memory, "type", "") != "stateless":
             playbook_text = self.memory_store.format_for_prompt(self.spec.tools)
             if playbook_text:
                 system_instruction += f"\n\n{playbook_text}"
