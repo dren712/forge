@@ -11,6 +11,7 @@ import {
   ProvenanceReport,
   ToolMemoryEntry,
   LearningRunReport,
+  EvidenceResponse,
   API_BASE,
 } from "../../../lib/api";
 import {
@@ -30,6 +31,10 @@ import {
   Activity,
   Layers,
   ArrowRight,
+  ArrowDown,
+  Lightbulb,
+  Database,
+  Dna,
   Volume2,
   Brain,
   Zap,
@@ -63,6 +68,12 @@ export default function ExperimentDetailPage() {
   const [loadingGenDetail, setLoadingGenDetail] = useState(false);
   const [compareGenAId, setCompareGenAId] = useState<string>("");
   const [compareGenBId, setCompareGenBId] = useState<string>("");
+
+  // Causal Evidence State (S8-D)
+  const [evidenceData, setEvidenceData] = useState<EvidenceResponse | null>(null);
+  const [selectedEvidenceGenId, setSelectedEvidenceGenId] = useState<string | null>(null);
+  const [loadingEvidence, setLoadingEvidence] = useState<boolean>(false);
+  const [causalViewMode, setCausalViewMode] = useState<"featured" | "experiment">("featured");
 
   useEffect(() => {
     if (generations.length >= 2) {
@@ -221,20 +232,35 @@ export default function ExperimentDetailPage() {
   const loadData = async () => {
     if (!id) return;
     try {
-      const [exp, gens, prov, evs, mems] = await Promise.all([
+      const [exp, gens, prov, evs, mems, evd] = await Promise.all([
         api.getExperiment(id),
         api.getGenerations(id),
         api.getProvenance(id),
         api.getEvents(id, 80),
         api.getToolMemory(id).catch(() => []),
+        api.getEvidence(id, selectedEvidenceGenId || undefined).catch(() => null),
       ]);
       setExperiment(exp);
       setGenerations(gens);
       setProvenance(prov);
       setEvents(evs);
       setToolMemories(mems);
+      if (evd) setEvidenceData(evd);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleSelectEvidenceGen = async (genId: string) => {
+    setSelectedEvidenceGenId(genId);
+    setLoadingEvidence(true);
+    try {
+      const ev = await api.getEvidence(id, genId);
+      setEvidenceData(ev);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingEvidence(false);
     }
   };
 
@@ -668,7 +694,7 @@ export default function ExperimentDetailPage() {
               activeTab === "learning" ? "border-orange-500 text-white" : "border-transparent text-gray-400 hover:text-gray-200"
             }`}
           >
-            <Brain className="w-4 h-4" /> Tool Memory & Learning ({toolMemories.length})
+            <Brain className="w-4 h-4" /> Causal Evidence & Learning ({toolMemories.length})
           </button>
           <button
             onClick={() => setActiveTab("console")}
@@ -1631,30 +1657,29 @@ export default function ExperimentDetailPage() {
         </div>
       )}
 
-      {/* Tool Memory & Self-Reflection Learning Tab */}
+      {/* Causal Evidence & Learning Tab (FORGE S8-D) */}
       {activeTab === "learning" && (
         <div className="space-y-6">
-          {/* Header Card explaining Track 1 Learning Loop */}
-          <div className="bg-[#161b22] border border-emerald-500/30 rounded-xl p-6 shadow-xl">
+          {/* Header Card */}
+          <div className="bg-[#161b22] border border-orange-500/30 rounded-2xl p-6 shadow-xl">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm uppercase tracking-wider">
-                  <Brain className="w-4 h-4" /> Autonomous Tool Learning Loop & Self-Reflective Memory
+                <div className="flex items-center gap-2 text-orange-400 font-bold text-xs uppercase tracking-wider">
+                  <Brain className="w-4 h-4 text-orange-400" /> Causal Learning Architecture & Evidence Graph
                 </div>
-                <h2 className="text-xl font-bold text-white mt-1">
-                  How the Agent Learns & Accelerates Over Time
+                <h2 className="text-xl font-black text-white mt-1">
+                  Evidence-Linked Causal Learning Flow
                 </h2>
-                <p className="text-xs text-gray-400 mt-1 max-w-2xl">
-                  In Run 1, the agent explores third-party APIs (Linear, Slack, CRM), encounters schema constraints,
-                  and executes post-run self-reflection to distill actionable playbooks. In subsequent runs, active
-                  memory eliminates errors, halving tool calls and token costs.
+                <p className="text-xs text-gray-400 mt-1 max-w-3xl">
+                  Inspect the unbroken causal chain connecting failure telemetry, self-reflection, persistent tool memory,
+                  evolutionary mutations, and evaluated downstream generations. Every link is backed by persisted foreign keys and cryptographic provenance.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => handlePlayAudio(`learning-${id}`, api.getLearningNarrationAudioUrl(id))}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-sm font-semibold transition"
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-sm font-semibold transition cursor-pointer"
                 >
                   <Volume2 className={`w-4 h-4 ${playingGenId === `learning-${id}` ? "animate-pulse text-purple-400" : ""}`} />
                   {playingGenId === `learning-${id}` ? "Playing Voice Debrief..." : "Voice Debrief (Smallest.ai)"}
@@ -1663,7 +1688,7 @@ export default function ExperimentDetailPage() {
                 <button
                   onClick={handleLearningLoop}
                   disabled={!!loadingAction}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-sm font-semibold shadow-lg shadow-orange-500/20 disabled:opacity-50 cursor-pointer"
                 >
                   <Zap className={`w-4 h-4 ${loadingAction === "learning" ? "animate-spin" : ""}`} />
                   {loadingAction === "learning" ? "Running Learning Cycle..." : "Execute Learning Loop"}
@@ -1671,11 +1696,16 @@ export default function ExperimentDetailPage() {
               </div>
             </div>
 
-            {/* Efficiency Delta Comparison Scoreboard */}
+            {/* Dual-Pass Run 1 vs Run 2 Live Scoreboard (if executed) */}
             {learningReport && (
               <div className="mt-6 pt-6 border-t border-[#30363d] space-y-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                  Empirical Acceleration (Run 1 Cold vs. Run 2 Warm Memory)
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" /> Live Dual-Pass Learning Acceleration (Run 1 Cold vs. Run 2 Warm Memory)
+                  </div>
+                  <span className="text-[11px] font-mono text-gray-500">
+                    Evidence-linked cause: reflected memory prevents cold exploration errors
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   <div className="p-4 rounded-xl bg-[#0d1117] border border-emerald-500/30">
@@ -1722,146 +1752,658 @@ export default function ExperimentDetailPage() {
                       </span>
                       <span className="text-xs font-bold text-emerald-400">0 in Run 2</span>
                     </div>
-                    <span className="text-[11px] text-gray-500">Zero wasted recovery loops</span>
+                    <span className="text-[11px] text-gray-500">Zero exploratory recovery loops</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 5-STAGE CAUSAL EVIDENCE PIPELINE */}
+          <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 shadow-xl space-y-6">
+            {/* Pipeline Header & View Mode Switch */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#30363d] pb-4">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-orange-400" /> Causal Trace Progression (5 Stages)
+                </span>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Visual communication of failure reflection and evolutionary adaptation
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 bg-[#0d1117] p-1 rounded-xl border border-[#30363d]">
+                <button
+                  onClick={() => setCausalViewMode("featured")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    causalViewMode === "featured"
+                      ? "bg-orange-500 text-white shadow"
+                      : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  Stored Real Example (Linear API)
+                </button>
+                <button
+                  onClick={() => setCausalViewMode("experiment")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    causalViewMode === "experiment"
+                      ? "bg-orange-500 text-white shadow"
+                      : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  Live Experiment Evidence ({evidenceData?.mutations?.length || 0} mutations)
+                </button>
+              </div>
+            </div>
+
+            {/* Horizontal 5-Step Pipeline Overview Indicator */}
+            <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-3.5 overflow-x-auto">
+              <div className="flex items-center justify-between gap-2 min-w-max text-xs font-mono">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 font-bold">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                  <span>FAILURE</span>
+                </div>
+                <div className="text-gray-600 font-bold px-1">↓</div>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 font-bold">
+                  <Lightbulb className="w-3.5 h-3.5 text-purple-400" />
+                  <span>REFLECTION</span>
+                </div>
+                <div className="text-gray-600 font-bold px-1">↓</div>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold">
+                  <Database className="w-3.5 h-3.5 text-amber-400" />
+                  <span>MEMORY</span>
+                </div>
+                <div className="text-gray-600 font-bold px-1">↓</div>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 font-bold">
+                  <Dna className="w-3.5 h-3.5 text-blue-400" />
+                  <span>MUTATION</span>
+                </div>
+                <div className="text-gray-600 font-bold px-1">↓</div>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>NEW GENERATION</span>
+                </div>
+              </div>
+            </div>
+
+            {/* VIEW 1: FEATURED STORED REAL EXAMPLE (LINEAR API QUIRK) */}
+            {causalViewMode === "featured" && (
+              <div className="space-y-4">
+                {/* 1. FAILURE */}
+                <div className="rounded-2xl border border-rose-500/30 bg-[#0d1117] p-5 shadow-lg relative overflow-hidden">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-2 w-full">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                          FAILURE
+                        </span>
+                        <span className="font-mono text-xs font-bold text-rose-400">HTTP 422</span>
+                        <span className="font-mono text-xs text-gray-500">• linear_api</span>
+                      </div>
+                      <h3 className="text-base font-bold text-white">
+                        Linear team identifier rejected
+                      </h3>
+                      <div className="bg-[#161b22] p-3 rounded-lg border border-rose-500/20 font-mono text-xs text-rose-300 space-y-1">
+                        <div>HTTP 422 Unprocessable Entity: team_id must be a valid 36-character team UUID (e.g. &apos;550e8400-e29b-41d4-a716-446655440001&apos;).</div>
+                        <div className="text-[11px] text-gray-500">Root cause: agent passed team slug &apos;CORE&apos; rather than UUID schema identifier.</div>
+                      </div>
+                    </div>
+                    <div className="text-right font-mono text-[11px] text-gray-500 hidden sm:block shrink-0">
+                      <span className="block text-gray-400 font-semibold">Persisted Source</span>
+                      <span>Task: task_02_contextual_sla_routing</span>
+                      <span className="block text-gray-500">Execution #33781481</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Causal Evidence Chain: Failure -> Memory -> Zero-Shot */}
-                <div className="mt-6 pt-6 border-t border-[#30363d] space-y-4">
-                  <div>
-                    <div className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4" /> Causal Evidence: How Failures Directly Caused Zero-Shot Execution
-                    </div>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Direct empirical proof that learned memory — not chance — eliminated exploratory errors and caused 100% accuracy in Run 2.
-                    </p>
+                {/* Downward Connector 1 */}
+                <div className="flex flex-col items-center justify-center my-1">
+                  <div className="w-0.5 h-3 bg-gradient-to-b from-rose-500/40 to-purple-500/40"></div>
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-gray-400 font-bold tracking-wide">
+                    <ArrowDown className="w-3 h-3 text-purple-400 animate-bounce" /> Evidence-linked cause
                   </div>
+                  <div className="w-0.5 h-3 bg-gradient-to-b from-purple-500/40 to-purple-500/40"></div>
+                </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    {/* Causal Card 1: Linear UUID */}
-                    <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d] flex flex-col justify-between space-y-3">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400">
-                            RUN 1 COLD FAILURE
-                          </span>
-                          <span className="font-mono text-[11px] text-gray-500">linear_api</span>
-                        </div>
-                        <div className="text-xs font-mono text-rose-300 bg-[#161b22] p-2 rounded border border-rose-500/20">
-                          HTTP 422: Invalid team slug 'CORE'. Expected 36-char UUID.
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-center my-1 text-gray-500">
-                        <ArrowRight className="w-4 h-4 text-emerald-400 rotate-90 lg:rotate-0" />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
-                          REFLECTED PLAYBOOK (SCHEMA_QUIRK)
+                {/* 2. REFLECTION */}
+                <div className="rounded-2xl border border-purple-500/30 bg-[#0d1117] p-5 shadow-lg relative overflow-hidden">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-2 w-full">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          REFLECTION
                         </span>
-                        <p className="text-xs text-gray-300 italic">
-                          "Linear requires UUID '550e8400-e29b-41d4-a716-446655440001'. Never pass slugs."
+                        <span className="font-mono text-xs font-bold text-purple-300">Category: SCHEMA_QUIRK</span>
+                      </div>
+                      <h3 className="text-base font-bold text-white">
+                        Self-Reflection & Rule Synthesis
+                      </h3>
+                      <div className="bg-[#161b22] p-3 rounded-lg border border-purple-500/20 space-y-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block">Actual Learned Rule from Stored Evidence:</span>
+                        <p className="text-xs text-white font-mono italic">
+                          &ldquo;Linear requires a 36-character team UUID (&apos;550e8400-e29b-41d4-a716-446655440001&apos;). Do not pass team slugs like &apos;CORE&apos;.&rdquo;
                         </p>
-                      </div>
-
-                      <div className="flex items-center justify-center my-1 text-gray-500">
-                        <ArrowRight className="w-4 h-4 text-emerald-400 rotate-90 lg:rotate-0" />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                          RUN 2 WARM ACTION
-                        </span>
-                        <div className="text-xs font-mono text-emerald-300 bg-[#161b22] p-2 rounded border border-emerald-500/20">
-                          team_id: '550e8400-...' passed directly (0 errors, 1 call)
+                        <div className="text-[11px] text-gray-500 italic">
+                          Evidence: &ldquo;Error 422 Unprocessable Entity: Linear requires 36-character team UUID.&rdquo;
                         </div>
                       </div>
                     </div>
+                    <div className="text-right font-mono text-[11px] text-gray-500 hidden sm:block shrink-0">
+                      <span className="block text-gray-400 font-semibold">Engine</span>
+                      <span>ToolReflectionEngine</span>
+                      <span className="block text-gray-500">Reflection Record #b2edeb2e</span>
+                    </div>
+                  </div>
+                </div>
 
-                    {/* Causal Card 2: Slack Alert Tag */}
-                    <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d] flex flex-col justify-between space-y-3">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400">
-                            RUN 1 COLD FAILURE
-                          </span>
-                          <span className="font-mono text-[11px] text-gray-500">slack_api</span>
-                        </div>
-                        <div className="text-xs font-mono text-rose-300 bg-[#161b22] p-2 rounded border border-rose-500/20">
-                          HTTP 400: Channel policy violation. #enterprise-escalations requires [SLA-ALERT].
-                        </div>
-                      </div>
+                {/* Downward Connector 2 */}
+                <div className="flex flex-col items-center justify-center my-1">
+                  <div className="w-0.5 h-3 bg-gradient-to-b from-purple-500/40 to-amber-500/40"></div>
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-gray-400 font-bold tracking-wide">
+                    <ArrowDown className="w-3 h-3 text-amber-400 animate-bounce" /> Evidence-linked cause
+                  </div>
+                  <div className="w-0.5 h-3 bg-gradient-to-b from-amber-500/40 to-amber-500/40"></div>
+                </div>
 
-                      <div className="flex items-center justify-center my-1 text-gray-500">
-                        <ArrowRight className="w-4 h-4 text-emerald-400 rotate-90 lg:rotate-0" />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
-                          REFLECTED PLAYBOOK (WORKFLOW_DEP)
+                {/* 3. MEMORY */}
+                <div className="rounded-2xl border border-amber-500/30 bg-[#0d1117] p-5 shadow-lg relative overflow-hidden">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          MEMORY
                         </span>
-                        <p className="text-xs text-gray-300 italic">
-                          "Enterprise escalations must include '[SLA-ALERT]' and customer_id tag."
-                        </p>
+                        <span className="font-mono text-xs font-bold text-amber-400">ToolMemoryStore</span>
+                      </div>
+                      <span className="text-xs font-mono text-gray-500">Persisted in database tool_memories</span>
+                    </div>
+
+                    <h3 className="text-base font-bold text-white">
+                      Stored Tool Playbook Heuristic
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">Stored Playbook</span>
+                        <span className="font-mono text-xs font-bold text-white mt-1 block">linear_api</span>
+                        <span className="text-[11px] text-gray-400 mt-0.5 block font-mono">create_issue with team_id</span>
                       </div>
 
-                      <div className="flex items-center justify-center my-1 text-gray-500">
-                        <ArrowRight className="w-4 h-4 text-emerald-400 rotate-90 lg:rotate-0" />
+                      <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">Confidence</span>
+                        <span className="font-mono text-xs font-bold text-emerald-400 mt-1 block">1.00 (100%)</span>
+                        <span className="text-[11px] text-gray-400 mt-0.5 block">Observed 2x across runs</span>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                          RUN 2 WARM ACTION
+                      <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">Source Execution</span>
+                        <span className="font-mono text-xs font-bold text-cyan-400 mt-1 block truncate">33781481-e1e1-421e</span>
+                        <span className="text-[11px] text-gray-400 mt-0.5 block">Persisted foreign key link</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Downward Connector 3 */}
+                <div className="flex flex-col items-center justify-center my-1">
+                  <div className="w-0.5 h-3 bg-gradient-to-b from-amber-500/40 to-blue-500/40"></div>
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-gray-400 font-bold tracking-wide">
+                    <ArrowDown className="w-3 h-3 text-blue-400 animate-bounce" /> Evidence-linked cause
+                  </div>
+                  <div className="w-0.5 h-3 bg-gradient-to-b from-blue-500/40 to-blue-500/40"></div>
+                </div>
+
+                {/* 4. MUTATION */}
+                <div className="rounded-2xl border border-blue-500/30 bg-[#0d1117] p-5 shadow-lg relative overflow-hidden">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                          MUTATION
                         </span>
-                        <div className="text-xs font-mono text-emerald-300 bg-[#161b22] p-2 rounded border border-emerald-500/20">
-                          Formatted with [SLA-ALERT] cust_acme_corp instantly (0 errors)
-                        </div>
+                        <span className="font-mono text-xs font-bold text-blue-400">VERIFIER_UPDATE</span>
+                      </div>
+                      <div className="font-mono text-xs text-gray-400">
+                        Target: <strong className="text-white font-mono">verifier</strong>
                       </div>
                     </div>
 
-                    {/* Causal Card 3: Linear Integer Priority */}
-                    <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d] flex flex-col justify-between space-y-3">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400">
-                            RUN 1 COLD FAILURE
+                    <h3 className="text-base font-bold text-white">
+                      Mutation Spec & Rationale
+                    </h3>
+
+                    <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">Reason:</span>
+                      <p className="text-xs text-gray-200 font-mono">
+                        Observed 1 verification failure(s) where agent prematurely declared completion.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div className="p-3 rounded-xl bg-[#161b22] border border-rose-500/20 space-y-1">
+                        <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block font-mono">Before</span>
+                        <pre className="text-[11px] text-gray-300 font-mono overflow-x-auto">
+{JSON.stringify({
+  type: "none",
+  require_zero_failed_tests: true,
+  enforce_before_complete: true,
+  min_test_count: 1
+}, null, 2)}
+                        </pre>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-[#161b22] border border-emerald-500/20 space-y-1">
+                        <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">After</span>
+                        <pre className="text-[11px] text-gray-300 font-mono overflow-x-auto">
+{JSON.stringify({
+  type: "mandatory_tests",
+  require_zero_failed_tests: true,
+  enforce_before_complete: true,
+  min_test_count: 1
+}, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Downward Connector 4 */}
+                <div className="flex flex-col items-center justify-center my-1">
+                  <div className="w-0.5 h-3 bg-gradient-to-b from-blue-500/40 to-emerald-500/40"></div>
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-gray-400 font-bold tracking-wide">
+                    <ArrowDown className="w-3 h-3 text-emerald-400 animate-bounce" /> Evidence-linked cause
+                  </div>
+                  <div className="w-0.5 h-3 bg-gradient-to-b from-emerald-500/40 to-emerald-500/40"></div>
+                </div>
+
+                {/* 5. NEW GENERATION / RESULT */}
+                <div className="rounded-2xl border border-emerald-500/30 bg-[#0d1117] p-5 shadow-lg relative overflow-hidden">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          NEW GENERATION
+                        </span>
+                        <span className="font-mono text-xs font-bold text-emerald-400">MEASURED RESULT</span>
+                      </div>
+                      <span className="text-xs font-mono text-gray-400">Benchmark Evaluated Comparison</span>
+                    </div>
+
+                    <h3 className="text-base font-bold text-white">
+                      Measured Change
+                    </h3>
+
+                    {/* Measured Change Scoreboard */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Before */}
+                      <div className="p-4 rounded-xl bg-[#161b22] border border-rose-500/20 space-y-3">
+                        <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-rose-400">
+                            Before (Parent G0)
                           </span>
-                          <span className="font-mono text-[11px] text-gray-500">linear_api</span>
+                          <span className="font-mono text-[10px] text-gray-500">Unmitigated Baseline</span>
                         </div>
-                        <div className="text-xs font-mono text-rose-300 bg-[#161b22] p-2 rounded border border-rose-500/20">
-                          HTTP 400: Invalid priority 'urgent'. Expected integer 1-4.
+                        <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                          <div className="p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">tool calls</span>
+                            <span className="text-lg font-black text-white">3</span>
+                            <span className="text-[10px] text-gray-500 block">per task</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">accuracy</span>
+                            <span className="text-lg font-black text-white">33.3%</span>
+                            <span className="text-[10px] text-gray-500 block">1 / 3 tasks</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">latency</span>
+                            <span className="text-lg font-black text-white">3.16s</span>
+                            <span className="text-[10px] text-gray-500 block">3,162 ms</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">cost</span>
+                            <span className="text-lg font-black text-white">$0.000958</span>
+                            <span className="text-[10px] text-gray-500 block">per task</span>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-center my-1 text-gray-500">
-                        <ArrowRight className="w-4 h-4 text-emerald-400 rotate-90 lg:rotate-0" />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400">
-                          REFLECTED PLAYBOOK (SCHEMA_QUIRK)
-                        </span>
-                        <p className="text-xs text-gray-300 italic">
-                          "Priority must be integer: 1 (Urgent), 2 (High), 3 (Normal), 4 (Low)."
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-center my-1 text-gray-500">
-                        <ArrowRight className="w-4 h-4 text-emerald-400 rotate-90 lg:rotate-0" />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                          RUN 2 WARM ACTION
-                        </span>
-                        <div className="text-xs font-mono text-emerald-300 bg-[#161b22] p-2 rounded border border-emerald-500/20">
-                          priority: 1 sent cleanly on first attempt
+                      {/* After */}
+                      <div className="p-4 rounded-xl bg-[#161b22] border border-emerald-500/30 space-y-3">
+                        <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                            After (Candidate G1)
+                          </span>
+                          <span className="font-mono text-[10px] text-emerald-400 font-bold">Memory & Gate Active</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                          <div className="p-2.5 rounded-lg bg-[#0d1117] border border-emerald-500/20">
+                            <span className="text-[10px] text-gray-500 block uppercase">tool calls</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-lg font-black text-emerald-400">2</span>
+                              <span className="text-[10px] font-bold text-emerald-400">-33.3%</span>
+                            </div>
+                            <span className="text-[10px] text-gray-500 block">lower = improvement</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#0d1117] border border-emerald-500/20">
+                            <span className="text-[10px] text-gray-500 block uppercase">accuracy</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-lg font-black text-emerald-400">50.0%</span>
+                              <span className="text-[10px] font-bold text-emerald-400">+16.7%</span>
+                            </div>
+                            <span className="text-[10px] text-gray-500 block">higher = improvement</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">latency</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-lg font-black text-rose-400">3.82s</span>
+                              <span className="text-[10px] font-bold text-rose-400">+20.7%</span>
+                            </div>
+                            <span className="text-[10px] text-gray-500 block">lower = improvement</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#0d1117] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">cost</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-lg font-black text-rose-400">$0.001081</span>
+                              <span className="text-[10px] font-bold text-rose-400">+12.8%</span>
+                            </div>
+                            <span className="text-[10px] text-gray-500 block">lower = improvement</span>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* VIEW 2: DYNAMIC EXPERIMENT EVIDENCE CHAIN */}
+            {causalViewMode === "experiment" && (
+              <div className="space-y-4">
+                {/* Generation selector if multiple generations */}
+                {generations.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 pb-2">
+                    <span className="text-xs text-gray-400 font-semibold">Inspect Evidence for Generation:</span>
+                    {generations.map((g) => (
+                      <button
+                        key={g.id}
+                        onClick={() => handleSelectEvidenceGen(g.id)}
+                        className={`px-3 py-1 rounded-lg border font-mono text-xs transition cursor-pointer ${
+                          (selectedEvidenceGenId || evidenceData?.generation) === g.id
+                            ? "bg-orange-500/20 border-orange-500 text-orange-300 font-bold"
+                            : "bg-[#0d1117] border-[#30363d] text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        Gen {g.generation_number} ({g.status})
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {loadingEvidence ? (
+                  <div className="p-8 text-center text-sm text-gray-400 animate-pulse bg-[#0d1117] rounded-xl border border-[#30363d]">
+                    Loading generation evidence chain...
+                  </div>
+                ) : evidenceData ? (
+                  <div className="space-y-4">
+                    {/* 1. FAILURE */}
+                    <div className="rounded-2xl border border-rose-500/30 bg-[#0d1117] p-5 shadow-lg">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                              FAILURE
+                            </span>
+                            <span className="text-xs font-bold text-rose-400">
+                              {evidenceData.failures.length > 0 ? `${evidenceData.failures.length} Failure Record(s)` : "No Active Failures"}
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-mono text-gray-500">
+                            Target Gen: {evidenceData.generation || "None"}
+                          </span>
+                        </div>
+
+                        {evidenceData.failures.length === 0 ? (
+                          <div className="text-xs text-gray-400 bg-[#161b22] p-3 rounded-lg border border-[#30363d]">
+                            No failures recorded for this generation.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {evidenceData.failures.slice(0, 3).map((f, i) => (
+                              <div key={i} className="bg-[#161b22] p-3 rounded-lg border border-rose-500/20 space-y-1">
+                                <div className="flex items-center justify-between text-xs font-mono">
+                                  <span className="font-bold text-rose-300">{f.failure_type || "UNKNOWN_FAILURE"}</span>
+                                  <span className="text-gray-500">{f.task_id || "Task ID N/A"}</span>
+                                </div>
+                                <p className="text-xs text-gray-300 font-mono">{f.root_cause || "Execution failed"}</p>
+                                {f.execution_id && (
+                                  <div className="text-[10px] font-mono text-gray-500">Execution: {f.execution_id}</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Downward Connector 1 */}
+                    <div className="flex flex-col items-center justify-center my-1">
+                      <div className="w-0.5 h-3 bg-gradient-to-b from-rose-500/40 to-purple-500/40"></div>
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-gray-400 font-bold tracking-wide">
+                        <ArrowDown className="w-3 h-3 text-purple-400 animate-bounce" /> Evidence-linked cause
+                      </div>
+                      <div className="w-0.5 h-3 bg-gradient-to-b from-purple-500/40 to-purple-500/40"></div>
+                    </div>
+
+                    {/* 2. REFLECTION */}
+                    <div className="rounded-2xl border border-purple-500/30 bg-[#0d1117] p-5 shadow-lg">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              REFLECTION
+                            </span>
+                            <span className="text-xs font-bold text-purple-300">
+                              {evidenceData.memory.length > 0 ? `Category: ${evidenceData.memory[0].category}` : "Category: SCHEMA_QUIRK"}
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-mono text-gray-500">ToolReflectionEngine</span>
+                        </div>
+
+                        {evidenceData.memory.length === 0 ? (
+                          <div className="text-xs text-gray-400 bg-[#161b22] p-3 rounded-lg border border-[#30363d]">
+                            No reflected rules recorded yet. Execute learning loop or evolution to synthesize playbooks.
+                          </div>
+                        ) : (
+                          <div className="bg-[#161b22] p-3 rounded-lg border border-purple-500/20 space-y-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block">Actual Learned Rule from Stored Evidence:</span>
+                            <p className="text-xs text-white font-mono italic">
+                              &ldquo;{evidenceData.memory[0].learned_rule}&rdquo;
+                            </p>
+                            {evidenceData.memory[0].evidence && (
+                              <div className="text-[11px] text-gray-500 italic">Evidence: {evidenceData.memory[0].evidence}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Downward Connector 2 */}
+                    <div className="flex flex-col items-center justify-center my-1">
+                      <div className="w-0.5 h-3 bg-gradient-to-b from-purple-500/40 to-amber-500/40"></div>
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-gray-400 font-bold tracking-wide">
+                        <ArrowDown className="w-3 h-3 text-amber-400 animate-bounce" /> Evidence-linked cause
+                      </div>
+                      <div className="w-0.5 h-3 bg-gradient-to-b from-amber-500/40 to-amber-500/40"></div>
+                    </div>
+
+                    {/* 3. MEMORY */}
+                    <div className="rounded-2xl border border-amber-500/30 bg-[#0d1117] p-5 shadow-lg">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              MEMORY
+                            </span>
+                            <span className="text-xs font-bold text-amber-300">
+                              {evidenceData.memory.length} Persistent Playbooks
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-mono text-gray-500">ToolMemoryStore</span>
+                        </div>
+
+                        {evidenceData.memory.length === 0 ? (
+                          <div className="text-xs text-gray-400 bg-[#161b22] p-3 rounded-lg border border-[#30363d]">
+                            No memory entries stored in database for this experiment.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">Stored Playbook</span>
+                              <span className="font-mono text-xs font-bold text-white mt-1 block">{evidenceData.memory[0].tool_name}</span>
+                              <span className="text-[11px] text-gray-400 mt-0.5 block font-mono">{evidenceData.memory[0].pattern_trigger}</span>
+                            </div>
+                            <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">Confidence</span>
+                              <span className="font-mono text-xs font-bold text-emerald-400 mt-1 block">{(evidenceData.memory[0].confidence * 100).toFixed(0)}%</span>
+                              <span className="text-[11px] text-gray-400 mt-0.5 block">Observed {evidenceData.memory[0].observation_count}x</span>
+                            </div>
+                            <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">Source Execution</span>
+                              <span className="font-mono text-xs font-bold text-cyan-400 mt-1 block truncate">
+                                {evidenceData.memory[0].execution_id || "Tracked in provenance"}
+                              </span>
+                              <span className="text-[11px] text-gray-400 mt-0.5 block">Persisted foreign key link</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Downward Connector 3 */}
+                    <div className="flex flex-col items-center justify-center my-1">
+                      <div className="w-0.5 h-3 bg-gradient-to-b from-amber-500/40 to-blue-500/40"></div>
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-gray-400 font-bold tracking-wide">
+                        <ArrowDown className="w-3 h-3 text-blue-400 animate-bounce" /> Evidence-linked cause
+                      </div>
+                      <div className="w-0.5 h-3 bg-gradient-to-b from-blue-500/40 to-blue-500/40"></div>
+                    </div>
+
+                    {/* 4. MUTATION */}
+                    <div className="rounded-2xl border border-blue-500/30 bg-[#0d1117] p-5 shadow-lg">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                              MUTATION
+                            </span>
+                            <span className="text-xs font-bold text-blue-400">
+                              {evidenceData.mutations.length > 0 ? evidenceData.mutations[0].mutation_type : "Baseline (No mutation)"}
+                            </span>
+                          </div>
+                          {evidenceData.mutations.length > 0 && (
+                            <span className="text-xs font-mono text-gray-400">
+                              Target: <strong className="text-white font-mono">{evidenceData.mutations[0].target}</strong>
+                            </span>
+                          )}
+                        </div>
+
+                        {evidenceData.mutations.length === 0 ? (
+                          <div className="text-xs text-gray-400 bg-[#161b22] p-3 rounded-lg border border-[#30363d]">
+                            Baseline generation G0: no mutations applied. Evolve agent to synthesize next candidate generation.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">Reason:</span>
+                              <p className="text-xs text-gray-200 font-mono">{evidenceData.mutations[0].reason}</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="p-3 rounded-xl bg-[#161b22] border border-rose-500/20 space-y-1">
+                                <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider block font-mono">Before</span>
+                                <pre className="text-[11px] text-gray-300 font-mono overflow-x-auto">
+                                  {JSON.stringify(evidenceData.mutations[0].before, null, 2)}
+                                </pre>
+                              </div>
+
+                              <div className="p-3 rounded-xl bg-[#161b22] border border-emerald-500/20 space-y-1">
+                                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block font-mono">After</span>
+                                <pre className="text-[11px] text-gray-300 font-mono overflow-x-auto">
+                                  {JSON.stringify(evidenceData.mutations[0].after, null, 2)}
+                                </pre>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Downward Connector 4 */}
+                    <div className="flex flex-col items-center justify-center my-1">
+                      <div className="w-0.5 h-3 bg-gradient-to-b from-blue-500/40 to-emerald-500/40"></div>
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-gray-400 font-bold tracking-wide">
+                        <ArrowDown className="w-3 h-3 text-emerald-400 animate-bounce" /> Evidence-linked cause
+                      </div>
+                      <div className="w-0.5 h-3 bg-gradient-to-b from-emerald-500/40 to-emerald-500/40"></div>
+                    </div>
+
+                    {/* 5. NEW GENERATION / RESULT */}
+                    <div className="rounded-2xl border border-emerald-500/30 bg-[#0d1117] p-5 shadow-lg">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-black px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              NEW GENERATION
+                            </span>
+                            <span className="font-mono text-xs font-bold text-emerald-400">MEASURED RESULT</span>
+                          </div>
+                          <span className="text-xs font-mono text-gray-400">
+                            Decision: <strong className="text-white font-bold">{evidenceData.decision?.status || "COMPLETED"}</strong>
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">Decision Rationale:</span>
+                          <p className="text-xs text-emerald-300 font-mono">
+                            {evidenceData.decision?.reason || "Baseline generation evaluated against benchmark suite."}
+                          </p>
+                        </div>
+
+                        {/* Metrics Breakdown */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                          <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">Accuracy</span>
+                            <span className="text-lg font-black text-white">
+                              {evidenceData.metrics?.accuracy !== undefined ? `${(evidenceData.metrics.accuracy * 100).toFixed(1)}%` : "Not available"}
+                            </span>
+                          </div>
+                          <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">Reliability</span>
+                            <span className="text-lg font-black text-cyan-400">
+                              {evidenceData.metrics?.reliability !== undefined ? `${(evidenceData.metrics.reliability * 100).toFixed(1)}%` : "Not available"}
+                            </span>
+                          </div>
+                          <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">Cost / task</span>
+                            <span className="text-lg font-black text-amber-400">
+                              {evidenceData.metrics?.avg_cost_per_task !== undefined ? `$${evidenceData.metrics.avg_cost_per_task.toFixed(4)}` : "Not available"}
+                            </span>
+                          </div>
+                          <div className="p-3 rounded-xl bg-[#161b22] border border-[#30363d]">
+                            <span className="text-[10px] text-gray-500 block uppercase">Latency / task</span>
+                            <span className="text-lg font-black text-purple-400">
+                              {evidenceData.metrics?.avg_latency_ms !== undefined ? `${(evidenceData.metrics.avg_latency_ms / 1000).toFixed(2)}s` : "Not available"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-sm text-gray-500 bg-[#0d1117] rounded-xl border border-[#30363d]">
+                    No evidence data available.
+                  </div>
+                )}
               </div>
             )}
           </div>

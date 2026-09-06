@@ -101,6 +101,76 @@ export interface ToolMemoryEntry {
   confidence: number;
   observation_count: number;
   created_at: string;
+  execution_id?: string | null;
+  failure_id?: string | null;
+  reflection_id?: string | null;
+}
+
+export interface FailureEvidence {
+  failure_id: string;
+  task_id: string | null;
+  execution_id: string | null;
+  failure_type: string | null;
+  root_cause: string | null;
+  evidence: string[];
+}
+
+export interface MemoryEvidence {
+  id: string;
+  tool_name: string;
+  category: string;
+  pattern_trigger: string;
+  learned_rule: string;
+  evidence?: string;
+  confidence: number;
+  observation_count: number;
+  execution_id?: string | null;
+  failure_id?: string | null;
+  reflection_id?: string | null;
+}
+
+export interface MutationEvidence {
+  id: string;
+  generation_id: string;
+  mutation_type: string;
+  target: string;
+  before: any;
+  after: any;
+  reason: string;
+  observed_failure?: string | null;
+  expected_effect?: string | null;
+  failure_cluster_id?: string | null;
+  failure_ids?: string[];
+}
+
+export interface DecisionEvidence {
+  decision_id?: string | null;
+  accepted?: boolean;
+  status?: string;
+  reason?: string | null;
+  dominance_result?: string | null;
+  metrics_delta?: Record<string, any>;
+  parent_generation_id?: string | null;
+  candidate_generation_id?: string | null;
+  mutation_id?: string | null;
+}
+
+export interface EvidenceResponse {
+  generation: string | null;
+  parent_generation: string | null;
+  metrics: Record<string, any>;
+  failures: FailureEvidence[];
+  memory: MemoryEvidence[];
+  mutations: MutationEvidence[];
+  decision: DecisionEvidence;
+  provenance: {
+    valid: boolean;
+    total_events: number;
+    broken_index: number | null;
+    message: string;
+    genesis_hash: string;
+    latest_hash: string;
+  };
 }
 
 export interface LearningRunReport {
@@ -155,6 +225,8 @@ export const api = {
   getExecutions: (id: string) => fetchJson<any[]>(`/experiments/${id}/executions`),
   getEvents: (id: string, limit = 150) => fetchJson<TraceEvent[]>(`/experiments/${id}/events?limit=${limit}`),
   getProvenance: (id: string) => fetchJson<ProvenanceReport>(`/experiments/${id}/provenance`),
+  getEvidence: (id: string, generationId?: string) =>
+    fetchJson<EvidenceResponse>(`/experiments/${id}/evidence${generationId ? `?generation_id=${generationId}` : ""}`),
   getBenchmarks: () => fetchJson<any[]>("/benchmarks"),
   getTools: () => fetchJson<any[]>("/tools"),
   getNarrationAudioUrl: (genId: string) => `${API_BASE}/generations/${genId}/narrate`,
