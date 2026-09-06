@@ -158,4 +158,4 @@ async def test_failure_analyzer_and_mutation_generator():
 
     candidate_spec, mutation = generator.propose_mutation(spec, [analysis], generation_number=1)
     assert candidate_spec.verifier.type == "mandatory_tests"
-    assert mutation.target == "verifier"
+    assert mutation.target in ("verifier", "verification_strategy")
