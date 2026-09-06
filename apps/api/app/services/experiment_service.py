@@ -12,6 +12,7 @@ from app.models.entities import (
     ExecutionModel,
     TraceEventModel,
     MutationModel,
+    ToolMemoryModel,
 )
 from app.schemas.api import ExperimentCreateRequest
 from app.schemas.agent_spec import AgentSpec
@@ -950,3 +951,236 @@ class ExperimentService:
             "genesis_hash": GENESIS_HASH,
             "latest_hash": latest_h,
         }
+
+    @staticmethod
+    async def get_evidence(
+        db: AsyncSession,
+        experiment_id: str,
+        generation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        FORGE S7-D: Inspect the complete evidence chain for an experiment generation.
+        Answers:
+        - Why did this agent fail? (failures)
+        - What did it learn? (memory)
+        - What changed? (mutations)
+        - Which generation introduced the change? (generation, mutations.generation_id)
+        - Was the candidate accepted? (decision.accepted, decision.status)
+        - What evidence supports the decision? (decision.reason, metrics_delta, dominance_result)
+        - Is the provenance chain valid? (provenance.valid)
+        """
+        stmt = select(ExperimentModel).where(ExperimentModel.id == experiment_id)
+        exp = (await db.execute(stmt)).scalar_one_or_none()
+        if not exp:
+            raise ValueError(f"Experiment {experiment_id} not found")
+
+        # Determine target generation
+        target_gen = None
+        if generation_id:
+            gen_stmt = select(GenerationModel).where(
+                GenerationModel.id == generation_id,
+                GenerationModel.experiment_id == experiment_id,
+            )
+            target_gen = (await db.execute(gen_stmt)).scalar_one_or_none()
+            if not target_gen:
+                raise ValueError(f"Generation {generation_id} not found in experiment {experiment_id}")
+        else:
+            if exp.current_generation_id:
+                target_gen = (await db.execute(
+                    select(GenerationModel).where(GenerationModel.id == exp.current_generation_id)
+                )).scalar_one_or_none()
+            if not target_gen and exp.best_generation_id:
+                target_gen = (await db.execute(
+                    select(GenerationModel).where(GenerationModel.id == exp.best_generation_id)
+                )).scalar_one_or_none()
+            if not target_gen:
+                latest_stmt = (
+                    select(GenerationModel)
+                    .where(GenerationModel.experiment_id == experiment_id)
+                    .order_by(desc(GenerationModel.generation_number))
+                )
+                target_gen = (await db.execute(latest_stmt)).scalars().first()
+
+        # Provenance verification
+        prov = await ExperimentService.verify_provenance(db, experiment_id)
+        prov_data = {
+            "valid": prov["is_valid"],
+            "total_events": prov["total_events"],
+            "broken_index": prov["broken_index"],
+            "message": prov["message"],
+            "genesis_hash": prov["genesis_hash"],
+            "latest_hash": prov["latest_hash"],
+        }
+
+        # If no generation exists yet in this experiment
+        if not target_gen:
+            return {
+                "generation": None,
+                "parent_generation": None,
+                "metrics": {},
+                "failures": [],
+                "memory": [],
+                "mutations": [],
+                "decision": {},
+                "provenance": prov_data,
+            }
+
+        # 1. Target generation executions
+        exec_stmt = select(ExecutionModel).where(ExecutionModel.generation_id == target_gen.id)
+        execs = (await db.execute(exec_stmt)).scalars().all()
+        exec_ids = {e.id for e in execs}
+
+        # 2. Failures ("Why did this agent fail?")
+        # Fetch FAILURE_DETECTED events for this generation
+        event_stmt = select(TraceEventModel).where(
+            TraceEventModel.experiment_id == experiment_id,
+            TraceEventModel.type == EventType.FAILURE_DETECTED.value,
+        )
+        all_fail_events = (await db.execute(event_stmt)).scalars().all()
+
+        # Filter events for this generation (or its executions)
+        gen_fail_events = [
+            e for e in all_fail_events
+            if e.generation_id == target_gen.id or (e.execution_id and e.execution_id in exec_ids)
+        ]
+
+        failures_list: list[dict[str, Any]] = []
+        for ev in gen_fail_events:
+            p = ev.payload or {}
+            fid = p.get("failure_id") or ev.id
+            failures_list.append({
+                "failure_id": fid,
+                "task_id": p.get("task_id"),
+                "execution_id": ev.execution_id or p.get("execution_id"),
+                "failure_type": p.get("failure_type"),
+                "root_cause": p.get("root_cause"),
+                "evidence": p.get("evidence", []),
+            })
+
+        # Also incorporate failed executions if not already included
+        failed_execs = [e for e in execs if e.status == "FAILED"]
+        for fe in failed_execs:
+            if not any(f.get("execution_id") == fe.id for f in failures_list):
+                failures_list.append({
+                    "failure_id": f"fail_exec_{fe.id}",
+                    "task_id": fe.task_id,
+                    "execution_id": fe.id,
+                    "failure_type": (fe.metrics or {}).get("failure_type", "EXECUTION_FAILURE"),
+                    "root_cause": (fe.result or {}).get("error") or (fe.metrics or {}).get("reason", "Task execution failed"),
+                    "evidence": [(fe.result or {}).get("error")] if (fe.result or {}).get("error") else [],
+                })
+
+        # Summary fallback if no explicit event was persisted
+        if not failures_list and target_gen.metrics and "failure_breakdown" in target_gen.metrics:
+            for ft, count in (target_gen.metrics.get("failure_breakdown") or {}).items():
+                failures_list.append({
+                    "failure_id": f"breakdown_{ft}",
+                    "task_id": None,
+                    "execution_id": None,
+                    "failure_type": ft,
+                    "root_cause": f"Observed {count} failure(s) of category {ft}",
+                    "evidence": [f"Count: {count}"],
+                })
+
+        # 3. Memory ("What did it learn?")
+        mem_stmt = select(ToolMemoryModel).where(
+            ToolMemoryModel.experiment_id == experiment_id
+        ).order_by(ToolMemoryModel.created_at)
+        memories = (await db.execute(mem_stmt)).scalars().all()
+        memory_list = [
+            {
+                "id": m.id,
+                "tool_name": m.tool_name,
+                "category": m.category,
+                "pattern_trigger": m.pattern_trigger,
+                "learned_rule": m.learned_rule,
+                "evidence": m.evidence,
+                "confidence": m.confidence,
+                "observation_count": m.observation_count,
+                "execution_id": m.execution_id,
+                "failure_id": m.failure_id,
+                "reflection_id": m.reflection_id,
+            }
+            for m in memories
+        ]
+
+        # 4. Mutations ("What changed? Which generation introduced the change?")
+        mut_stmt = select(MutationModel).where(MutationModel.experiment_id == experiment_id)
+        all_mutations = (await db.execute(mut_stmt)).scalars().all()
+
+        matched_mutations = [
+            m for m in all_mutations
+            if (target_gen.mutation_id and m.id == target_gen.mutation_id)
+            or m.generation_id == target_gen.id
+        ]
+        if not matched_mutations and target_gen.parent_generation_id:
+            matched_mutations = [
+                m for m in all_mutations
+                if m.generation_id == target_gen.parent_generation_id
+            ]
+        if not matched_mutations and target_gen.generation_number > 0:
+            matched_mutations = all_mutations
+
+        mutations_list = [
+            {
+                "id": mut.id,
+                "generation_id": mut.generation_id,
+                "mutation_type": mut.mutation_type,
+                "target": mut.target,
+                "before": mut.before_json,
+                "after": mut.after_json,
+                "reason": mut.reason,
+                "observed_failure": mut.observed_failure,
+                "expected_effect": mut.expected_effect,
+                "failure_cluster_id": mut.failure_cluster_id,
+                "failure_ids": mut.failure_ids or [],
+            }
+            for mut in matched_mutations
+        ]
+
+        # 5. Decision ("Was the candidate accepted? What evidence supports the decision?")
+        decision: dict[str, Any] = {}
+        if target_gen.metrics and "acceptance_decision" in target_gen.metrics:
+            ad = target_gen.metrics["acceptance_decision"]
+            decision = {
+                "decision_id": ad.get("decision_id") or target_gen.decision_id,
+                "accepted": ad.get("accepted", target_gen.status == "ACCEPTED"),
+                "status": ad.get("status", target_gen.status),
+                "reason": ad.get("reason", target_gen.rejection_reason),
+                "dominance_result": ad.get("dominance_result"),
+                "metrics_delta": ad.get("metrics_delta"),
+                "parent_generation_id": ad.get("parent_generation_id") or target_gen.parent_generation_id,
+                "candidate_generation_id": ad.get("candidate_generation_id") or target_gen.id,
+                "mutation_id": ad.get("mutation_id") or target_gen.mutation_id,
+            }
+        elif target_gen.status in ("ACCEPTED", "REJECTED"):
+            decision = {
+                "decision_id": target_gen.decision_id,
+                "accepted": target_gen.status == "ACCEPTED",
+                "status": target_gen.status,
+                "reason": target_gen.rejection_reason or ("Candidate accepted" if target_gen.status == "ACCEPTED" else "Candidate rejected"),
+                "parent_generation_id": target_gen.parent_generation_id,
+                "candidate_generation_id": target_gen.id,
+                "mutation_id": target_gen.mutation_id,
+            }
+        else:
+            decision = {
+                "decision_id": target_gen.decision_id,
+                "accepted": target_gen.status in ("COMPLETED", "ACCEPTED"),
+                "status": target_gen.status,
+                "reason": "Baseline generation" if target_gen.generation_number == 0 else (target_gen.rejection_reason or "Completed"),
+                "parent_generation_id": target_gen.parent_generation_id,
+                "candidate_generation_id": target_gen.id,
+            }
+
+        return {
+            "generation": target_gen.id,
+            "parent_generation": target_gen.parent_generation_id,
+            "metrics": target_gen.metrics or {},
+            "failures": failures_list,
+            "memory": memory_list,
+            "mutations": mutations_list,
+            "decision": decision,
+            "provenance": prov_data,
+        }
+

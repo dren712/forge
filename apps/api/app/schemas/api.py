@@ -80,3 +80,15 @@ class ProvenanceVerificationResponse(BaseModel):
     message: str
     genesis_hash: str
     latest_hash: str
+
+
+class EvidenceResponse(BaseModel):
+    generation: str | None
+    parent_generation: str | None
+    metrics: dict[str, Any]
+    failures: list[dict[str, Any]]
+    memory: list[dict[str, Any]]
+    mutations: list[dict[str, Any]]
+    decision: dict[str, Any]
+    provenance: dict[str, Any]
+

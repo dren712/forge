@@ -15,6 +15,7 @@ from app.schemas.api import (
     ExecutionResponse,
     EventResponse,
     ProvenanceVerificationResponse,
+    EvidenceResponse,
 )
 from app.services.experiment_service import ExperimentService
 from app.benchmarks.registry import benchmark_registry
@@ -454,6 +455,54 @@ async def list_events(id: str, limit: int = 100, db: AsyncSession = Depends(get_
 async def verify_provenance(id: str, db: AsyncSession = Depends(get_db)):
     prov = await ExperimentService.verify_provenance(db, id)
     return ProvenanceVerificationResponse(**prov)
+
+
+@router.get("/experiments/{id}/evidence", response_model=EvidenceResponse)
+async def get_experiment_evidence(
+    id: str,
+    generation_id: Optional[str] = Query(None, description="Optional generation ID to inspect. Defaults to current or latest generation."),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    FORGE S7-D: Read-only evidence inspection endpoint.
+    Answers:
+    - Why did this agent fail?
+    - What did it learn?
+    - What changed?
+    - Which generation introduced the change?
+    - Was the candidate accepted?
+    - What evidence supports the decision?
+    - Is the provenance chain valid?
+    """
+    try:
+        evidence = await ExperimentService.get_evidence(db, id, generation_id=generation_id)
+        return EvidenceResponse(**evidence)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Evidence retrieval error: {str(e)}")
+
+
+@router.get("/generations/{id}/evidence", response_model=EvidenceResponse)
+async def get_generation_evidence(
+    id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Convenience evidence inspection endpoint directly by generation ID.
+    """
+    stmt = select(GenerationModel).where(GenerationModel.id == id)
+    gen = (await db.execute(stmt)).scalar_one_or_none()
+    if not gen:
+        raise HTTPException(status_code=404, detail=f"Generation {id} not found")
+    try:
+        evidence = await ExperimentService.get_evidence(db, gen.experiment_id, generation_id=gen.id)
+        return EvidenceResponse(**evidence)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Evidence retrieval error: {str(e)}")
+
 
 
 @router.get("/experiments/{id}/tool-memory")
