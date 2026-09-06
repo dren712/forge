@@ -12,6 +12,7 @@ from app.providers.base import LLMProvider
 from app.evaluation.metrics import ExecutionMetrics, GenerationMetrics
 from app.evaluation.scoring import compute_cost, compute_reliability, aggregate_generation_metrics
 from app.evaluation.failure_analyzer import FailureAnalyzer, FailureAnalysis
+from app.evaluation.failure_clustering import FailureClusterer, FailureClusterReport
 from app.evolution.mutation import Mutation
 from app.evolution.mutation_generator import MutationGenerator
 from app.evolution.acceptance import AcceptanceEngine, AcceptanceDecision
@@ -38,6 +39,8 @@ class EvolutionEngine:
         self.recorder = recorder or EventRecorder(experiment_id)
         self.memory_store = memory_store or ToolMemoryStore(experiment_id)
         self.analyzer = FailureAnalyzer(provider)
+        self.clusterer = FailureClusterer()
+        self.last_failure_report: FailureClusterReport | None = None
         self.mutator = MutationGenerator(provider)
         self.acceptance = AcceptanceEngine()
 
@@ -151,8 +154,9 @@ class EvolutionEngine:
                     execution_id=execution_id,
                 )
 
-        # Aggregate generation level metrics
-        failure_counts = {f.failure_type.value: sum(1 for x in failures if x.failure_type == f.failure_type) for f in failures}
+        # Aggregate generation level metrics and cluster failures
+        self.last_failure_report = self.clusterer.cluster(failures, task_metrics)
+        failure_counts = {c.category: c.count for c in self.last_failure_report.clusters}
         gen_metrics = aggregate_generation_metrics(generation_number, task_metrics, failure_counts)
 
         return gen_metrics, task_metrics, failures
