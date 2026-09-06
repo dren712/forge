@@ -234,4 +234,10 @@ export const api = {
   getToolMemory: (id: string) => fetchJson<ToolMemoryEntry[]>(`/experiments/${id}/tool-memory`),
   runLearningLoop: (id: string) => fetchJson<LearningRunReport>(`/experiments/${id}/learning-run`, { method: "POST" }),
   getLearningNarrationAudioUrl: (expId: string) => `${API_BASE}/experiments/${expId}/learning-narrate`,
+
+  // Agent Orchestrator (AO) Developer Harness API (FORGE S8-G/H/I Task C)
+  getAOStatus: () =>
+    fetchJson<{ running: boolean; exit_code?: number; output?: string; error?: string; pid?: number | null; port?: number | null }>("/ao/status"),
+  getAODoctor: () =>
+    fetchJson<{ available: boolean; installed: boolean; exit_code?: number; output?: string; error?: string; daemon_ok?: boolean; sqlite_ok?: boolean; harness_detected?: boolean; auth_ready?: boolean }>("/ao/doctor"),
 };

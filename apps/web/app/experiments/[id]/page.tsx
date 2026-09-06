@@ -70,6 +70,7 @@ export default function ExperimentDetailPage() {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [taskLimit, setTaskLimit] = useState<number>(3);
   const [playingGenId, setPlayingGenId] = useState<string | null>(null);
+  const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const consoleBottomRef = useRef<HTMLDivElement>(null);
 
@@ -501,9 +502,10 @@ export default function ExperimentDetailPage() {
   };
 
   const handlePlayAudio = (genId: string, customUrl?: string) => {
-    if (playingGenId === genId) {
+    if (playingGenId === genId || loadingAudioId === genId) {
       audioPlayerRef.current?.pause();
       setPlayingGenId(null);
+      setLoadingAudioId(null);
       return;
     }
 
@@ -511,22 +513,32 @@ export default function ExperimentDetailPage() {
       audioPlayerRef.current.pause();
     }
 
+    setLoadingAudioId(genId);
+    setPlayingGenId(null);
+
     const audioUrl = customUrl || api.getNarrationAudioUrl(genId);
     const audio = new Audio(audioUrl);
     audioPlayerRef.current = audio;
-    setPlayingGenId(genId);
+
+    audio.onplaying = () => {
+      setLoadingAudioId(null);
+      setPlayingGenId(genId);
+    };
 
     audio.onended = () => {
       setPlayingGenId(null);
+      setLoadingAudioId(null);
     };
 
     audio.onerror = () => {
-      alert("Unable to play voice debrief (check SMALLEST_API_KEY).");
+      alert("Unable to play voice debrief (check SMALLEST_API_KEY or voice service status).");
+      setLoadingAudioId(null);
       setPlayingGenId(null);
     };
 
     audio.play().catch((e) => {
-      console.error(e);
+      console.error("Audio playback error:", e);
+      setLoadingAudioId(null);
       setPlayingGenId(null);
     });
   };
@@ -1295,10 +1307,20 @@ export default function ExperimentDetailPage() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handlePlayAudio(selectedGenDetail.generation.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#161b22] border border-[#30363d] text-xs font-semibold text-gray-300 hover:text-white cursor-pointer"
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
+                              playingGenId === selectedGenDetail.generation.id
+                                ? "bg-purple-500/20 text-purple-300 border-purple-500/40 animate-pulse"
+                                : loadingAudioId === selectedGenDetail.generation.id
+                                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                : "bg-[#161b22] border-[#30363d] text-gray-300 hover:text-white"
+                            }`}
                           >
-                            <Volume2 className="w-3.5 h-3.5" />
-                            Voice Debrief
+                            <Volume2 className={`w-3.5 h-3.5 ${playingGenId === selectedGenDetail.generation.id ? "animate-pulse text-purple-400" : ""}`} />
+                            {loadingAudioId === selectedGenDetail.generation.id
+                              ? "Synthesizing..."
+                              : playingGenId === selectedGenDetail.generation.id
+                              ? "Playing..."
+                              : "Voice Debrief"}
                           </button>
                           <button
                             onClick={() => {
@@ -1657,12 +1679,14 @@ export default function ExperimentDetailPage() {
                               title="Listen to Voice Debrief"
                               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
                                 playingGenId === gen.id
-                                  ? "bg-orange-500/20 text-orange-400 border-orange-500/50 animate-pulse"
+                                  ? "bg-purple-600/20 text-purple-300 border-purple-500/50 animate-pulse"
+                                  : loadingAudioId === gen.id
+                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
                                   : "bg-[#0d1117] border-[#30363d] text-gray-300 hover:text-white hover:border-gray-500"
                               }`}
                             >
-                              <Volume2 className="w-3.5 h-3.5" />
-                              {playingGenId === gen.id ? "Playing..." : "Voice"}
+                              <Volume2 className={`w-3.5 h-3.5 ${playingGenId === gen.id ? "animate-pulse text-purple-400" : ""}`} />
+                              {loadingAudioId === gen.id ? "Synthesizing..." : playingGenId === gen.id ? "Playing..." : "Voice"}
                             </button>
 
                             <button
@@ -2796,7 +2820,7 @@ export default function ExperimentDetailPage() {
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-sm font-semibold transition cursor-pointer"
                 >
                   <Volume2 className={`w-4 h-4 ${playingGenId === `learning-${id}` ? "animate-pulse text-purple-400" : ""}`} />
-                  {playingGenId === `learning-${id}` ? "Playing Voice Debrief..." : "Voice Debrief (Smallest.ai)"}
+                  {loadingAudioId === `learning-${id}` ? "Synthesizing Debrief..." : playingGenId === `learning-${id}` ? "Playing Voice Debrief..." : "Voice Debrief (Smallest.ai)"}
                 </button>
 
                 <button
@@ -3571,11 +3595,20 @@ export default function ExperimentDetailPage() {
                       </p>
                     </div>
 
-                    {entry.evidence && (
-                      <div className="text-[11px] text-gray-500 italic truncate">
-                        Evidence: {entry.evidence}
-                      </div>
-                    )}
+                    <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-[#21262d]">
+                      {entry.execution_id ? (
+                        <span className="font-mono text-gray-400 truncate">
+                          Source Execution: <span className="text-gray-300 font-semibold">{entry.execution_id.slice(0, 12)}...</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-600">Source: Stored Heuristic</span>
+                      )}
+                      {entry.evidence && (
+                        <span className="italic truncate max-w-[220px]" title={entry.evidence}>
+                          Evidence: {entry.evidence}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
