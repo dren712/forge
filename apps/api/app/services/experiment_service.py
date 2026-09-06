@@ -506,12 +506,21 @@ class ExperimentService:
             task_subset=selected_tasks,
         )
 
+        # Pre-assign candidate generation id for explicit causal links
+        cand_gen_id = str(uuid.uuid4())
+
         # --- S6-H: Run Pareto Acceptance Gate ---
         from app.evolution.acceptance import AcceptanceEngine
         acceptance_engine = AcceptanceEngine()
         decision = acceptance_engine.evaluate_candidate(cur_metrics, candidate_metrics)
+        if not decision.candidate_generation_id:
+            decision.candidate_generation_id = cand_gen_id
+        if not decision.parent_generation_id:
+            decision.parent_generation_id = parent_gen.id
+        if not decision.mutation_id:
+            decision.mutation_id = mutation.id
 
-        # Save Mutation
+        # Save Mutation with causal failure link
         mutation_db = MutationModel(
             id=mutation.id,
             experiment_id=exp.id,
@@ -523,11 +532,12 @@ class ExperimentService:
             reason=mutation.reason,
             observed_failure=mutation.observed_failure,
             expected_effect=mutation.expected_effect,
+            failure_cluster_id=mutation.failure_cluster_id,
+            failure_ids=mutation.failure_ids,
         )
         db.add(mutation_db)
 
         # Save candidate generation with acceptance decision persisted
-        cand_gen_id = str(uuid.uuid4())
         candidate_gen = GenerationModel(
             id=cand_gen_id,
             experiment_id=exp.id,
@@ -535,9 +545,11 @@ class ExperimentService:
             generation_number=parent_gen.generation_number + 1,
             agent_spec=candidate_spec.model_dump(),
             mutation_id=mutation.id,
+            decision_id=decision.id,
             metrics={
                 **candidate_metrics.model_dump(),
                 "acceptance_decision": {
+                    "decision_id": decision.id,
                     "accepted": decision.accepted,
                     "status": decision.status,
                     "reason": decision.reason,
@@ -545,6 +557,7 @@ class ExperimentService:
                     "metrics_delta": decision.metrics_delta,
                     "parent_generation_id": parent_gen.id,
                     "candidate_generation_id": cand_gen_id,
+                    "mutation_id": mutation.id,
                 },
             },
             benchmark_id=parent_gen.benchmark_id,

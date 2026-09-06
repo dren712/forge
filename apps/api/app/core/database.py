@@ -32,8 +32,18 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE generations ADD COLUMN benchmark_version VARCHAR(32) DEFAULT '2.0.0'"))
-        except Exception:
-            pass
+        from sqlalchemy import text
+        migrations = [
+            "ALTER TABLE generations ADD COLUMN benchmark_version VARCHAR(32) DEFAULT '2.0.0'",
+            "ALTER TABLE generations ADD COLUMN decision_id VARCHAR(64)",
+            "ALTER TABLE mutations ADD COLUMN failure_cluster_id VARCHAR(64)",
+            "ALTER TABLE mutations ADD COLUMN failure_ids JSON DEFAULT '[]'",
+            "ALTER TABLE tool_memories ADD COLUMN execution_id VARCHAR(64)",
+            "ALTER TABLE tool_memories ADD COLUMN failure_id VARCHAR(64)",
+            "ALTER TABLE tool_memories ADD COLUMN reflection_id VARCHAR(64)",
+        ]
+        for mig in migrations:
+            try:
+                await conn.execute(text(mig))
+            except Exception:
+                pass

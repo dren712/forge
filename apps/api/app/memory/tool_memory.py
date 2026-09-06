@@ -27,8 +27,15 @@ class ToolPlaybookEntry(BaseModel):
     evidence: Optional[str] = None
     confidence: float = Field(default=0.85, ge=0.0, le=1.0)
     observation_count: int = 1
+    execution_id: Optional[str] = None
+    failure_id: Optional[str] = None
+    reflection_id: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    @property
+    def memory_id(self) -> str:
+        return self.id
 
     def canonical_dict(self) -> dict[str, Any]:
         """Returns a deterministic dictionary representation."""
@@ -37,11 +44,14 @@ class ToolPlaybookEntry(BaseModel):
             "confidence": round(self.confidence, 4),
             "created_at": self.created_at,
             "evidence": self.evidence,
+            "execution_id": self.execution_id,
             "experiment_id": self.experiment_id,
+            "failure_id": self.failure_id,
             "id": self.id,
             "learned_rule": self.learned_rule,
             "observation_count": self.observation_count,
             "pattern_trigger": self.pattern_trigger,
+            "reflection_id": self.reflection_id,
             "tool_name": self.tool_name,
             "updated_at": self.updated_at,
         }
@@ -91,6 +101,9 @@ class ToolMemoryStore:
         learned_rule: str,
         evidence: Optional[str] = None,
         confidence: float = 0.85,
+        execution_id: Optional[str] = None,
+        failure_id: Optional[str] = None,
+        reflection_id: Optional[str] = None,
     ) -> ToolPlaybookEntry:
         """Explicit save interface matching memory contract."""
         return self.add_or_update(
@@ -100,6 +113,9 @@ class ToolMemoryStore:
             learned_rule=learned_rule,
             evidence=evidence,
             confidence=confidence,
+            execution_id=execution_id,
+            failure_id=failure_id,
+            reflection_id=reflection_id,
         )
 
     def save_reflected_rule(self, rule: Any) -> ToolPlaybookEntry:
@@ -111,6 +127,9 @@ class ToolMemoryStore:
             learned_rule=getattr(rule, "learned_rule"),
             evidence=getattr(rule, "evidence", None),
             confidence=getattr(rule, "confidence", 0.85),
+            execution_id=getattr(rule, "execution_id", None),
+            failure_id=getattr(rule, "failure_id", None),
+            reflection_id=getattr(rule, "id", None) or getattr(rule, "reflection_id", None),
         )
 
     def add_or_update(
@@ -121,6 +140,9 @@ class ToolMemoryStore:
         learned_rule: str,
         evidence: Optional[str] = None,
         confidence: float = 0.85,
+        execution_id: Optional[str] = None,
+        failure_id: Optional[str] = None,
+        reflection_id: Optional[str] = None,
     ) -> ToolPlaybookEntry:
         valid_categories = ("SCHEMA_QUIRK", "CONTEXTUAL_LOGIC", "WORKFLOW_DEPENDENCY", "ERROR_RECOVERY")
         if category not in valid_categories:
@@ -145,6 +167,12 @@ class ToolMemoryStore:
                 # Preserve original evidence reference from the first discovery
                 if not entry.evidence and evidence:
                     entry.evidence = evidence
+                if execution_id and not entry.execution_id:
+                    entry.execution_id = execution_id
+                if failure_id and not entry.failure_id:
+                    entry.failure_id = failure_id
+                if reflection_id and not entry.reflection_id:
+                    entry.reflection_id = reflection_id
                 return entry
 
         new_entry = ToolPlaybookEntry(
@@ -156,6 +184,9 @@ class ToolMemoryStore:
             evidence=evidence,
             confidence=clamped_conf,
             observation_count=1,
+            execution_id=execution_id,
+            failure_id=failure_id,
+            reflection_id=reflection_id,
             created_at=now_iso,
             updated_at=now_iso,
         )
@@ -223,6 +254,9 @@ class ToolMemoryStore:
                 evidence=m.evidence,
                 confidence=m.confidence,
                 observation_count=m.observation_count,
+                execution_id=m.execution_id,
+                failure_id=m.failure_id,
+                reflection_id=m.reflection_id,
                 created_at=m.created_at.isoformat() if m.created_at else datetime.now(timezone.utc).isoformat(),
                 updated_at=m.updated_at.isoformat() if m.updated_at else datetime.now(timezone.utc).isoformat(),
             )
@@ -239,6 +273,12 @@ class ToolMemoryStore:
                 existing.observation_count = entry.observation_count
                 existing.learned_rule = entry.learned_rule
                 existing.evidence = entry.evidence
+                if entry.execution_id and not existing.execution_id:
+                    existing.execution_id = entry.execution_id
+                if entry.failure_id and not existing.failure_id:
+                    existing.failure_id = entry.failure_id
+                if entry.reflection_id and not existing.reflection_id:
+                    existing.reflection_id = entry.reflection_id
                 existing.updated_at = now
             else:
                 new_model = ToolMemoryModel(
@@ -251,6 +291,9 @@ class ToolMemoryStore:
                     evidence=entry.evidence,
                     confidence=entry.confidence,
                     observation_count=entry.observation_count,
+                    execution_id=entry.execution_id,
+                    failure_id=entry.failure_id,
+                    reflection_id=entry.reflection_id,
                     created_at=now,
                     updated_at=now,
                 )

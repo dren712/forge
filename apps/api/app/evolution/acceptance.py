@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import uuid
 from pydantic import BaseModel, Field
 
 from app.evaluation.metrics import GenerationMetrics
@@ -19,6 +20,10 @@ class TradeoffPolicy(str, Enum):
 
 
 class AcceptanceDecision(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    candidate_generation_id: Optional[str] = None
+    parent_generation_id: Optional[str] = None
+    mutation_id: Optional[str] = None
     accepted: bool
     status: str = "REJECTED"  # "ACCEPTED" or "REJECTED"
     reason: str
@@ -31,6 +36,10 @@ class AcceptanceDecision(BaseModel):
     cost_delta_percent: float = 0.0
     latency_delta_percent: float = 0.0
     composite_delta: float = 0.0
+
+    @property
+    def decision_id(self) -> str:
+        return self.id
 
     def __getitem__(self, item: str) -> Any:
         return getattr(self, item)
@@ -132,6 +141,9 @@ class AcceptanceEngine:
         candidate: GenerationMetrics | dict[str, Any] | Any,
         tradeoff_policy: TradeoffPolicy | str | Callable | None = None,
         tolerance: float | dict[str, float] | None = None,
+        candidate_generation_id: Optional[str] = None,
+        parent_generation_id: Optional[str] = None,
+        mutation_id: Optional[str] = None,
     ) -> AcceptanceDecision:
         p_acc, p_rel, p_cost, p_lat, p_comp = self._extract_metrics(parent)
         c_acc, c_rel, c_cost, c_lat, c_comp = self._extract_metrics(candidate)
@@ -275,6 +287,9 @@ class AcceptanceEngine:
             )
 
         return AcceptanceDecision(
+            candidate_generation_id=candidate_generation_id,
+            parent_generation_id=parent_generation_id,
+            mutation_id=mutation_id,
             accepted=accepted,
             status="ACCEPTED" if accepted else "REJECTED",
             reason=reason,

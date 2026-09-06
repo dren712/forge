@@ -263,7 +263,14 @@ class MutationGenerator:
                 expected_effect="Constrain agent reasoning with explicit negative instructions and edge-case guidance.",
             )
 
-        # 3. Validate mutation against schema, non-empty fields, no-op, and evidence grounding
+        # 3. Attach causal evidence links
+        if top_cluster:
+            mutation.failure_cluster_id = getattr(top_cluster, "id", None) or getattr(top_cluster, "cluster_id", None)
+            mutation.failure_ids = list(getattr(top_cluster, "failure_ids", []))
+        elif failures:
+            mutation.failure_ids = [str(getattr(f, "id", getattr(f, "failure_id", ""))) for f in failures if getattr(f, "id", getattr(f, "failure_id", None))]
+
+        # 4. Validate mutation against schema, non-empty fields, no-op, and evidence grounding
         validate_mutation(
             mutation=mutation,
             candidate_spec=candidate_spec,

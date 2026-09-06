@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from enum import Enum
 from typing import Literal, Any
 from pydantic import BaseModel, Field
@@ -26,6 +27,8 @@ class FailureType(str, Enum):
 
 
 class FailureAnalysis(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    execution_id: str | None = None
     task_id: str
     failure_type: FailureType
     severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "HIGH"
@@ -33,6 +36,10 @@ class FailureAnalysis(BaseModel):
     root_cause: str
     recommended_mutation: dict[str, Any] = Field(default_factory=dict)
     confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+
+    @property
+    def failure_id(self) -> str:
+        return self.id
 
 
 ANALYZER_SYSTEM_PROMPT = """You are the FORGE Failure Diagnosis Engine.
@@ -74,13 +81,16 @@ class FailureAnalyzer:
         state: AgentState,
         task: BenchmarkTask,
         evaluation: TaskEvaluation,
+        execution_id: str | None = None,
     ) -> FailureAnalysis | None:
         """Fast, deterministic diagnosis for clear-cut failure modes."""
+        eff_exec_id = execution_id or getattr(state, "execution_id", None)
         # 1. Verification Failure: Agent claimed completion but never ran tests
         test_runs = [tr for tr in state.tool_results if tr.get("tool") == "test_runner"]
         if not test_runs and not evaluation.passed:
             return FailureAnalysis(
                 task_id=task.id,
+                execution_id=eff_exec_id,
                 failure_type=FailureType.VERIFICATION_FAILURE,
                 severity="HIGH",
                 evidence=[
@@ -101,6 +111,7 @@ class FailureAnalyzer:
         if state.status == "TIMEOUT":
             return FailureAnalysis(
                 task_id=task.id,
+                execution_id=eff_exec_id,
                 failure_type=FailureType.TIMEOUT,
                 severity="CRITICAL",
                 evidence=[f"Execution exceeded timeout with {state.current_step} steps"],
@@ -118,6 +129,7 @@ class FailureAnalyzer:
         if len(tool_errors) >= 3 and not evaluation.passed:
             return FailureAnalysis(
                 task_id=task.id,
+                execution_id=eff_exec_id,
                 failure_type=FailureType.RECOVERY_FAILURE,
                 severity="HIGH",
                 evidence=[f"{len(tool_errors)} tool executions resulted in errors without effective recovery."],
@@ -134,6 +146,7 @@ class FailureAnalyzer:
         if "Constraint violation" in evaluation.reason:
             return FailureAnalysis(
                 task_id=task.id,
+                execution_id=eff_exec_id,
                 failure_type=FailureType.PLANNING_FAILURE,
                 severity="HIGH",
                 evidence=[evaluation.reason],
@@ -155,9 +168,11 @@ class FailureAnalyzer:
         task: BenchmarkTask,
         evaluation: TaskEvaluation,
         metrics: ExecutionMetrics,
+        execution_id: str | None = None,
     ) -> FailureAnalysis:
+        eff_exec_id = execution_id or getattr(state, "execution_id", None) or getattr(metrics, "execution_id", None)
         # Check rule-based diagnosis first for high reliability
-        rule_diagnosis = self._rule_based_diagnosis(agent_spec, state, task, evaluation)
+        rule_diagnosis = self._rule_based_diagnosis(agent_spec, state, task, evaluation, execution_id=eff_exec_id)
         if rule_diagnosis is not None:
             return rule_diagnosis
 
@@ -196,6 +211,7 @@ class FailureAnalyzer:
 
             return FailureAnalysis(
                 task_id=task.id,
+                execution_id=eff_exec_id,
                 failure_type=FailureType(ft),
                 severity=data.get("severity", "HIGH"),
                 evidence=data.get("evidence", [evaluation.reason]),
@@ -207,6 +223,7 @@ class FailureAnalyzer:
         except Exception:
             return FailureAnalysis(
                 task_id=task.id,
+                execution_id=eff_exec_id,
                 failure_type=FailureType.REASONING_FAILURE,
                 severity="HIGH",
                 evidence=[evaluation.reason],

@@ -60,6 +60,9 @@ class AgentState(BaseModel):
     verification_result: VerificationResult | None = None
     final_output: str | None = None
     latency_ms: float = 0.0
+    execution_id: str | None = None
+    generation_id: str | None = None
+    failure_id: str | None = None
 
     def transition_to(self, new_status: AgentStatus) -> None:
         """Enforces canonical execution lifecycle state transitions."""

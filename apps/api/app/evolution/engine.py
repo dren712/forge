@@ -142,12 +142,14 @@ class EvolutionEngine:
 
             # Failure diagnosis if not passed
             if not evaluation.passed:
-                analysis = await self.analyzer.analyze(spec, agent_state, task, evaluation, metric)
+                analysis = await self.analyzer.analyze(spec, agent_state, task, evaluation, metric, execution_id=execution_id)
                 failures.append(analysis)
                 await self.recorder.emit(
                     EventType.FAILURE_DETECTED,
                     {
+                        "failure_id": analysis.id,
                         "task_id": task.id,
+                        "execution_id": execution_id,
                         "failure_type": analysis.failure_type.value,
                         "root_cause": analysis.root_cause,
                         "evidence": analysis.evidence,
@@ -240,13 +242,22 @@ class EvolutionEngine:
 
         # 3. Acceptance decision
         decision = self.acceptance.evaluate_candidate(current_metrics, candidate_metrics)
+        if not decision.candidate_generation_id:
+            decision.candidate_generation_id = candidate_gen_id
+        if not decision.parent_generation_id:
+            decision.parent_generation_id = current_generation_id
+        if not decision.mutation_id:
+            decision.mutation_id = mutation.id
 
         decision_event = EventType.GENERATION_ACCEPTED if decision.accepted else EventType.GENERATION_REJECTED
         await self.recorder.emit(
             decision_event,
             {
+                "decision_id": decision.id,
                 "candidate_generation_id": candidate_gen_id,
                 "candidate_generation_number": candidate_gen_number,
+                "parent_generation_id": current_generation_id,
+                "mutation_id": mutation.id,
                 "status": decision.status,
                 "reason": decision.reason,
                 "accuracy_delta": decision.accuracy_delta,

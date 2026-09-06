@@ -48,6 +48,7 @@ class GenerationModel(Base):
     benchmark_version: Mapped[str | None] = mapped_column(String(32), nullable=True, default="2.0.0")
     status: Mapped[str] = mapped_column(String(32), default="CREATED")  # RUNNING, COMPLETED, ACCEPTED, REJECTED, FAILED
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     experiment: Mapped["ExperimentModel"] = relationship("ExperimentModel", back_populates="generations")
@@ -101,6 +102,8 @@ class MutationModel(Base):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     observed_failure: Mapped[str] = mapped_column(String(64), nullable=False)
     expected_effect: Mapped[str] = mapped_column(Text, nullable=False)
+    failure_cluster_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_ids: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
@@ -116,6 +119,9 @@ class ToolMemoryModel(Base):
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, default=0.85)
     observation_count: Mapped[int] = mapped_column(Integer, default=1)
+    execution_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reflection_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 

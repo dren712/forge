@@ -1,7 +1,7 @@
 import copy
 import uuid
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from app.schemas.agent_spec import (
@@ -67,6 +67,12 @@ class Mutation(BaseModel):
     reason: str
     observed_failure: str
     expected_effect: str
+    failure_cluster_id: Optional[str] = None
+    failure_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def mutation_id(self) -> str:
+        return self.id
 
     def apply(self, spec: AgentSpec) -> AgentSpec:
         """Applies this mutation to an AgentSpec and returns a new candidate."""

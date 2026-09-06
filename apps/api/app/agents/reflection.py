@@ -16,12 +16,15 @@ ReflectionCategory = Literal[
 ]
 
 
+import uuid
+
 class GroundedEvidenceError(ValueError):
     """Raised when proposed reflection evidence is absent from the execution trace."""
     pass
 
 
 class ReflectedRule(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     category: ReflectionCategory
     observed_problem: str = Field(..., min_length=3)
     evidence: str = Field(..., min_length=1)
@@ -29,6 +32,12 @@ class ReflectedRule(BaseModel):
     confidence: float = Field(default=0.85, ge=0.0, le=1.0)
     tool_name: str = Field(..., min_length=1)
     pattern_trigger: str = Field(..., min_length=1)
+    execution_id: Optional[str] = None
+    failure_id: Optional[str] = None
+
+    @property
+    def reflection_id(self) -> str:
+        return self.id
 
     @field_validator("confidence")
     @classmethod
@@ -46,10 +55,17 @@ class ReflectionInput(BaseModel):
 
 
 class ReflectionReport(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     discovered_rules_count: int
     summary: str
     entries: List[ToolPlaybookEntry]
     reflected_rules: List[ReflectedRule] = Field(default_factory=list)
+    execution_id: Optional[str] = None
+    failure_id: Optional[str] = None
+
+    @property
+    def report_id(self) -> str:
+        return self.id
 
 
 def verify_grounded_evidence(evidence: str, corpus: str) -> bool:
@@ -119,6 +135,8 @@ class ToolReflectionEngine:
         tool_results: list[dict[str, Any]] | None = None,
         task_context: Optional[str] = None,
         candidate_rules: list[dict[str, Any]] | None = None,
+        execution_id: Optional[str] = None,
+        failure_id: Optional[str] = None,
     ) -> list[ReflectedRule]:
         """
         Analyzes tool errors and execution trace to extract structured, validated ReflectedRule records.
@@ -299,6 +317,12 @@ class ToolReflectionEngine:
                     verify_grounded_evidence(rule.evidence, corpus)
                     results.append(rule)
 
+        for r in results:
+            if execution_id and not r.execution_id:
+                r.execution_id = execution_id
+            if failure_id and not r.failure_id:
+                r.failure_id = failure_id
+
         return results
 
     @classmethod
@@ -310,6 +334,8 @@ class ToolReflectionEngine:
         tool_results: list[dict[str, Any]] | None = None,
         task_context: Optional[str] = None,
         candidate_rules: list[dict[str, Any]] | None = None,
+        execution_id: Optional[str] = None,
+        failure_id: Optional[str] = None,
     ) -> list[ToolPlaybookEntry]:
         """
         Connects execution failure directly to persistent memory:
@@ -322,6 +348,8 @@ class ToolReflectionEngine:
             tool_results=tool_results,
             task_context=task_context,
             candidate_rules=candidate_rules,
+            execution_id=execution_id,
+            failure_id=failure_id,
         )
 
         persisted: list[ToolPlaybookEntry] = []
@@ -336,21 +364,25 @@ class ToolReflectionEngine:
         state: AgentState,
         memory_store: ToolMemoryStore,
         model_name: Optional[str] = None,
+        execution_id: Optional[str] = None,
+        failure_id: Optional[str] = None,
     ) -> ReflectionReport:
+        eff_exec_id = execution_id or getattr(state, "execution_id", None)
+        eff_fail_id = failure_id or getattr(state, "failure_id", None)
+
         reflected_rules = cls.reflect(
             execution_trace=state.observations,
             tool_errors=state.errors,
             tool_results=state.tool_results,
             task_context=state.goal,
+            execution_id=eff_exec_id,
+            failure_id=eff_fail_id,
         )
 
-        discovered = cls.reflect_and_persist(
-            memory_store=memory_store,
-            execution_trace=state.observations,
-            tool_errors=state.errors,
-            tool_results=state.tool_results,
-            task_context=state.goal,
-        )
+        discovered: list[ToolPlaybookEntry] = []
+        for r in reflected_rules:
+            entry = memory_store.save_reflected_rule(r)
+            discovered.append(entry)
 
         summary_text = (
             f"Self-reflection completed: Distilled {len(discovered)} operational rule(s) from execution trace. "
@@ -364,5 +396,7 @@ class ToolReflectionEngine:
             summary=summary_text,
             entries=discovered,
             reflected_rules=reflected_rules,
+            execution_id=eff_exec_id,
+            failure_id=eff_fail_id,
         )
 

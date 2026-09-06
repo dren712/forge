@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Any, Literal
+import uuid
 from pydantic import BaseModel, Field
 
 from app.evaluation.failure_analyzer import FailureType, FailureAnalysis
@@ -17,6 +18,7 @@ VALID_TAXONOMY_CATEGORIES = {t.value for t in FailureType}
 
 
 class FailureCluster(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     category: str
     count: int
     affected_tasks: list[str] = Field(default_factory=list)
@@ -24,12 +26,23 @@ class FailureCluster(BaseModel):
     representative_evidence: list[str] = Field(default_factory=list)
     severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "HIGH"
     root_causes: list[str] = Field(default_factory=list)
+    failure_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def cluster_id(self) -> str:
+        return self.id
 
 
 class FailureClusterReport(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     total_failures: int = 0
     total_tasks_evaluated: int = 0
     clusters: list[FailureCluster] = Field(default_factory=list)
+    failure_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def report_id(self) -> str:
+        return self.id
 
     def get_cluster(self, category: str | FailureType) -> FailureCluster | None:
         cat_str = category.value if isinstance(category, Enum) else str(category)
@@ -94,7 +107,9 @@ class FailureClusterer:
         for f in failures:
             if isinstance(f, FailureAnalysis):
                 f_type_str = f.failure_type.value if isinstance(f.failure_type, Enum) else str(f.failure_type)
+                f_id = getattr(f, "id", None) or getattr(f, "failure_id", None) or str(uuid.uuid4())
                 normalized_failures.append({
+                    "id": str(f_id),
                     "task_id": f.task_id,
                     "failure_type": f_type_str,
                     "severity": f.severity,
@@ -108,7 +123,9 @@ class FailureClusterer:
                 evidence_list = f.get("evidence", [])
                 if isinstance(evidence_list, str):
                     evidence_list = [evidence_list]
+                f_id = f.get("id", f.get("failure_id", str(uuid.uuid4())))
                 normalized_failures.append({
+                    "id": str(f_id),
                     "task_id": str(f.get("task_id", "")),
                     "failure_type": str(f_type),
                     "severity": str(f.get("severity", "HIGH")).upper(),
@@ -167,6 +184,7 @@ class FailureClusterer:
                 max_sev = "HIGH"
 
             percentage = round((count / total_failures) * 100.0, 2) if total_failures > 0 else 0.0
+            cluster_f_ids = [item["id"] for item in items if item.get("id")]
 
             clusters.append(FailureCluster(
                 category=cat,
@@ -176,15 +194,18 @@ class FailureClusterer:
                 representative_evidence=representative_evidence,
                 severity=max_sev,
                 root_causes=root_causes,
+                failure_ids=cluster_f_ids,
             ))
 
         # Sort clusters: primary by count descending, secondary by severity descending
         clusters.sort(key=lambda c: (c.count, SEVERITY_ORDER.get(c.severity, 0)), reverse=True)
 
+        all_failure_ids = [item["id"] for item in normalized_failures if item.get("id")]
         return FailureClusterReport(
             total_failures=total_failures,
             total_tasks_evaluated=total_tasks,
             clusters=clusters,
+            failure_ids=all_failure_ids,
         )
 
 
