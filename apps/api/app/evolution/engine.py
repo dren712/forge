@@ -78,6 +78,8 @@ class EvolutionEngine:
         for task in tasks:
             execution_id = str(uuid.uuid4())
             task_workspace = self.workspaces_root / f"gen_{generation_number}" / task.id
+            if hasattr(self.benchmark, "reset_task"):
+                await self.benchmark.reset_task(task, task_workspace)
             await self.benchmark.setup_task(task, task_workspace)
 
             start_t = time.perf_counter()
@@ -161,24 +163,29 @@ class EvolutionEngine:
 
         return gen_metrics, task_metrics, failures
 
-    async def evolve_step(
+    async def evaluate_candidate(
         self,
         current_generation_id: str,
         current_generation_number: int,
         current_spec: AgentSpec,
         current_metrics: GenerationMetrics,
-        failures: list[FailureAnalysis],
+        failures: list[FailureAnalysis] | None = None,
         task_subset: list[BenchmarkTask] | None = None,
-    ) -> tuple[AgentSpec, Mutation, GenerationMetrics, AcceptanceDecision]:
+    ) -> tuple[AgentSpec, Mutation, GenerationMetrics, list[ExecutionMetrics], list[FailureAnalysis]]:
         """
-        Takes an evaluated generation and executes the full cycle:
-        mutation -> candidate -> benchmark -> evaluate -> accept/reject
+        FORGE S6-F Candidate Evaluation:
+        current generation -> mutation -> candidate AgentSpec -> benchmark -> candidate metrics.
+        Runs candidate against the SAME benchmark version and task set as parent.
+        Resets benchmark state before execution.
+        Preserves parent generation and metrics untouched.
+        Does NOT perform acceptance/rejection.
         """
-        # 1. Propose mutation
+        # 1. Propose & validate mutation
         candidate_spec, mutation = self.mutator.propose_mutation(
             current_spec=current_spec,
             failures=failures,
             generation_number=current_generation_number + 1,
+            benchmark_metrics=current_metrics,
         )
 
         await self.recorder.emit(
@@ -196,13 +203,40 @@ class EvolutionEngine:
         candidate_gen_id = str(uuid.uuid4())
         candidate_gen_number = current_generation_number + 1
 
-        # 2. Run candidate generation
+        # 2. Run candidate generation against the same tasks
         candidate_metrics, candidate_task_metrics, candidate_failures = await self.run_generation(
             generation_id=candidate_gen_id,
             generation_number=candidate_gen_number,
             spec=candidate_spec,
             task_subset=task_subset,
         )
+
+        return candidate_spec, mutation, candidate_metrics, candidate_task_metrics, candidate_failures
+
+    async def evolve_step(
+        self,
+        current_generation_id: str,
+        current_generation_number: int,
+        current_spec: AgentSpec,
+        current_metrics: GenerationMetrics,
+        failures: list[FailureAnalysis],
+        task_subset: list[BenchmarkTask] | None = None,
+    ) -> tuple[AgentSpec, Mutation, GenerationMetrics, AcceptanceDecision]:
+        """
+        Takes an evaluated generation and executes the full cycle:
+        mutation -> candidate -> benchmark -> evaluate -> accept/reject
+        """
+        candidate_spec, mutation, candidate_metrics, candidate_task_metrics, candidate_failures = await self.evaluate_candidate(
+            current_generation_id=current_generation_id,
+            current_generation_number=current_generation_number,
+            current_spec=current_spec,
+            current_metrics=current_metrics,
+            failures=failures,
+            task_subset=task_subset,
+        )
+
+        candidate_gen_id = str(uuid.uuid4())
+        candidate_gen_number = current_generation_number + 1
 
         # 3. Acceptance decision
         decision = self.acceptance.evaluate_candidate(current_metrics, candidate_metrics)

@@ -258,6 +258,43 @@ async def evolve_agent(
         raise HTTPException(status_code=500, detail=f"Evolution error: {str(e)}")
 
 
+@router.post("/experiments/{id}/candidate", response_model=GenerationResponse)
+async def evaluate_candidate_agent(
+    id: str,
+    generation_id: str | None = None,
+    task_limit: int | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(ExperimentModel).where(ExperimentModel.id == id)
+    res = await db.execute(stmt)
+    exp = res.scalar_one_or_none()
+    if not exp:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    target_gen_id = generation_id or exp.current_generation_id
+    if not target_gen_id:
+        raise HTTPException(status_code=400, detail="No evaluated generation available to evolve from.")
+
+    try:
+        candidate_gen = await ExperimentService.evaluate_candidate(db, id, target_gen_id, task_limit=task_limit)
+        return GenerationResponse(
+            id=candidate_gen.id,
+            experiment_id=candidate_gen.experiment_id,
+            parent_generation_id=candidate_gen.parent_generation_id,
+            generation_number=candidate_gen.generation_number,
+            agent_spec=candidate_gen.agent_spec,
+            mutation_id=candidate_gen.mutation_id,
+            metrics=candidate_gen.metrics,
+            benchmark_id=candidate_gen.benchmark_id,
+            benchmark_version=getattr(candidate_gen, "benchmark_version", None),
+            status=candidate_gen.status,
+            rejection_reason=candidate_gen.rejection_reason,
+            created_at=candidate_gen.created_at,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Candidate evaluation error: {str(e)}")
+
+
 # ---------------------- DATA & METRICS ----------------------
 
 @router.get("/experiments/{id}/generations", response_model=List[GenerationResponse])

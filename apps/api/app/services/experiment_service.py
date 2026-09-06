@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import uuid
 from typing import Dict, List, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -391,6 +392,178 @@ class ExperimentService:
 
         await memory_store.sync_to_db(db)
         exp.status = "COMPLETED"
+        await db.commit()
+        await db.refresh(candidate_gen)
+        return candidate_gen
+
+    @staticmethod
+    async def evaluate_candidate(
+        db: AsyncSession, experiment_id: str, generation_id: str, task_limit: int | None = None
+    ) -> GenerationModel:
+        """
+        FORGE S6-F Candidate Evaluation:
+        Connects:
+        current generation -> mutation -> candidate AgentSpec -> benchmark -> candidate metrics.
+
+        Requirements:
+        * runs against the SAME benchmark version and task set as parent
+        * resets benchmark state before execution
+        * preserves parent generation and parent metrics untouched
+        * creates candidate generation
+        * executes real tasks
+        * calculates real metrics
+        * persists candidate execution results
+        * persists candidate metrics
+        * does NOT implement acceptance/rejection yet
+        * does NOT modify parent metrics or best_generation_id
+        """
+        exp_stmt = select(ExperimentModel).where(ExperimentModel.id == experiment_id)
+        exp = (await db.execute(exp_stmt)).scalar_one_or_none()
+        gen_stmt = select(GenerationModel).where(GenerationModel.id == generation_id)
+        parent_gen = (await db.execute(gen_stmt)).scalar_one_or_none()
+
+        if not exp or not parent_gen or not parent_gen.metrics:
+            raise ValueError("Experiment or evaluated parent Generation not found")
+
+        # Snapshot parent metrics to guarantee parent remains untouched
+        parent_metrics_snapshot = copy.deepcopy(parent_gen.metrics)
+
+        bench = benchmark_registry.get(exp.benchmark_id)
+        provider = get_llm_provider()
+        if isinstance(provider, DeterministicMockProvider):
+            provider.mode = "evolved"
+
+        recorder = EventRecorder(experiment_id)
+        last_event = (await db.execute(
+            select(TraceEventModel).where(TraceEventModel.experiment_id == exp.id).order_by(desc(TraceEventModel.timestamp)).limit(1)
+        )).scalars().first()
+        if last_event:
+            recorder._last_hash = last_event.event_hash
+
+        async def on_event(ev: TraceEvent):
+            await ExperimentService.broadcast_event(experiment_id, ev)
+
+        recorder.subscribe(on_event)
+
+        memory_store = ToolMemoryStore(experiment_id)
+        await memory_store.sync_from_db(db)
+
+        engine = EvolutionEngine(
+            experiment_id=experiment_id,
+            benchmark=bench,
+            provider=provider,
+            recorder=recorder,
+            memory_store=memory_store,
+        )
+
+        # Retrieve exact task set executed for parent generation
+        parent_exec_stmt = select(ExecutionModel).where(ExecutionModel.generation_id == parent_gen.id)
+        parent_execs = (await db.execute(parent_exec_stmt)).scalars().all()
+        all_tasks = bench.list_tasks()
+
+        if parent_execs:
+            parent_task_ids = {pe.task_id for pe in parent_execs}
+            selected_tasks = [t for t in all_tasks if t.id in parent_task_ids]
+        else:
+            selected_tasks = all_tasks[:task_limit] if task_limit else all_tasks
+
+        # Retrieve failure history from previous executions
+        failures_list = []
+        stored_failures = parent_gen.metrics.get("failure_breakdown", {})
+        from app.evaluation.failure_analyzer import FailureAnalysis, FailureType
+        for ft_str, count in stored_failures.items():
+            for _ in range(count):
+                failures_list.append(FailureAnalysis(
+                    task_id="observed_task",
+                    failure_type=FailureType(ft_str) if ft_str in [e.value for e in FailureType] else FailureType.VERIFICATION_FAILURE,
+                    root_cause=f"Observed repeated {ft_str} during generation evaluation.",
+                    evidence=[f"Failure frequency: {count}"],
+                ))
+
+        if not failures_list and parent_gen.metrics.get("accuracy", 0.0) < 1.0:
+            failures_list.append(FailureAnalysis(
+                task_id="observed_task",
+                failure_type=FailureType.VERIFICATION_FAILURE,
+                root_cause="Baseline agent declared completion without mandatory verification checks.",
+                evidence=["Verification failures detected"],
+            ))
+
+        from app.evaluation.metrics import GenerationMetrics
+        cur_metrics = GenerationMetrics(**parent_gen.metrics)
+        cur_spec = AgentSpec(**parent_gen.agent_spec)
+
+        candidate_spec, mutation, candidate_metrics, candidate_task_metrics, candidate_failures = await engine.evaluate_candidate(
+            current_generation_id=parent_gen.id,
+            current_generation_number=parent_gen.generation_number,
+            current_spec=cur_spec,
+            current_metrics=cur_metrics,
+            failures=failures_list,
+            task_subset=selected_tasks,
+        )
+
+        # Save Mutation
+        mutation_db = MutationModel(
+            id=mutation.id,
+            experiment_id=exp.id,
+            generation_id=parent_gen.id,
+            mutation_type=mutation.mutation_type.value,
+            target=mutation.target,
+            before_json=mutation.before if isinstance(mutation.before, dict) else {"val": mutation.before},
+            after_json=mutation.after if isinstance(mutation.after, dict) else {"val": mutation.after},
+            reason=mutation.reason,
+            observed_failure=mutation.observed_failure,
+            expected_effect=mutation.expected_effect,
+        )
+        db.add(mutation_db)
+
+        # Save candidate generation
+        cand_gen_id = str(uuid.uuid4())
+        candidate_gen = GenerationModel(
+            id=cand_gen_id,
+            experiment_id=exp.id,
+            parent_generation_id=parent_gen.id,
+            generation_number=parent_gen.generation_number + 1,
+            agent_spec=candidate_spec.model_dump(),
+            mutation_id=mutation.id,
+            metrics=candidate_metrics.model_dump(),
+            benchmark_id=parent_gen.benchmark_id,
+            benchmark_version=parent_gen.benchmark_version,
+            status="COMPLETED",
+            rejection_reason=None,
+        )
+        db.add(candidate_gen)
+
+        # Persist task-level executions for candidate
+        for tm in candidate_task_metrics:
+            db.add(ExecutionModel(
+                id=str(uuid.uuid4()),
+                experiment_id=exp.id,
+                generation_id=cand_gen_id,
+                task_id=tm.task_id,
+                status="COMPLETED" if tm.task_success else "FAILED",
+                metrics=tm.model_dump(),
+            ))
+
+        # Save all new events
+        for ev in recorder.get_events():
+            exists = (await db.execute(select(TraceEventModel).where(TraceEventModel.id == ev.event_id))).scalar_one_or_none()
+            if not exists:
+                db.add(TraceEventModel(
+                    id=ev.event_id,
+                    experiment_id=exp.id,
+                    generation_id=ev.generation_id,
+                    execution_id=ev.execution_id,
+                    timestamp=ev.timestamp,
+                    type=ev.type.value,
+                    payload=ev.payload,
+                    previous_event_hash=ev.previous_event_hash,
+                    event_hash=ev.event_hash,
+                ))
+
+        # Invariant check: parent metrics must remain completely unmodified
+        assert parent_gen.metrics == parent_metrics_snapshot, "Parent metrics must remain unmodified"
+
+        await memory_store.sync_to_db(db)
         await db.commit()
         await db.refresh(candidate_gen)
         return candidate_gen
