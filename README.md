@@ -294,7 +294,7 @@ cd apps/web && npm install && cd ../..
 A pre-configured `.env` works out of the box with the local SQLite database. Ensure your `.env` contains:
 
 ```env
-TENSORMUX_API_KEY=tmx_c7e209ad781c0490dc1b9f9480a0e61d
+TENSORMUX_API_KEY=your_tensormux_api_key_here
 TENSORMUX_BASE_URL=https://api.tensormux.com/v1
 TENSORMUX_MODEL=glm-4-7-flash
 DATABASE_URL=sqlite+aiosqlite:///forge.db
