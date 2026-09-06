@@ -19,8 +19,11 @@ class BenchmarkRegistry:
     def list_benchmarks(self) -> list[dict]:
         return [
             {
+                "benchmark_id": getattr(b, "benchmark_id", b.name),
                 "name": b.name,
                 "version": b.version,
+                "evaluator_version": getattr(b, "evaluator_version", b.version),
+                "created_at": getattr(b, "created_at", "2026-03-01T00:00:00Z"),
                 "tasks_count": len(b.list_tasks()),
                 "task_ids": [t.id for t in b.list_tasks()],
             }

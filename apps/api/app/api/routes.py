@@ -443,6 +443,11 @@ async def get_ao_status():
 async def get_ao_doctor():
     return await ao_bridge.run_doctor()
 
+@router.get("/ao/diagnostics")
+async def get_ao_diagnostics():
+    return await ao_bridge.get_diagnostics()
+
+
 
 # ---------------------- SMALLEST.AI VOICE NARRATION ----------------------
 from fastapi.responses import Response

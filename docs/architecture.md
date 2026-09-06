@@ -358,3 +358,85 @@ Execution Result (`ExecutionResult`)
    `RUNNING | RECOVERING -> MAX_STEPS` (exceeded `MAX_AGENT_STEPS` or `MAX_TOOL_CALLS`).
 4. **Provider / Fatal Failure**:
    `RUNNING -> FAILED` (exhausted `MAX_MODEL_RETRIES` on provider exception).
+---
+
+# S4 Benchmark & Evaluation Architecture
+
+Section S4 formalizes the benchmark integrity, objective state evaluation, and the development orchestration boundary.
+
+```text
+BENCHMARK EXECUTION PIPELINE
+┌─────────────────────────────────────────────────────────────┐
+│ Benchmark Protocol (third_party_automation v2.0.0)          │
+│   ├── benchmark_id: "third_party_automation"                │
+│   ├── version: "2.0.0" | evaluator_version: "2.0.0"         │
+│   └── 10 Standardized Tasks (task_01 .. task_10)            │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+ISOLATED ENVIRONMENT SETUP
+┌─────────────────────────────────────────────────────────────┐
+│ Workspace Sandbox (/tmp/forge_benchmark_<id>)               │
+│   ├── setup_task() / reset_task()                           │
+│   ├── Deterministic Enterprise State Seeding:               │
+│   │     ├── .crm_state.json                                 │
+│   │     ├── .sentry_state.json                              │
+│   │     ├── .linear_state.json                              │
+│   │     ├── .slack_messages.json                            │
+│   │     └── .github_state.json                              │
+│   └── Zero Cross-Task State Bleed Guarantee                 │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+AGENT EXECUTION
+┌─────────────────────────────────────────────────────────────┐
+│ AgentRuntime.run(goal, workspace)                           │
+│   ├── Naive Mode (Cold): No prior tool memory injected      │
+│   └── Evolved Mode (Warm): Distilled playbooks injected     │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+OBJECTIVE EVALUATION CONTRACT
+┌─────────────────────────────────────────────────────────────┐
+│ TaskEvaluator.evaluate_task(task, workspace, state)         │
+│   ├── State-Based Inspection (Filesystem & JSON state)      │
+│   ├── Multi-Check Granularity (list[TaskCheck]):            │
+│   │     ├── check.name (e.g. "linear_issue_created")        │
+│   │     ├── check.passed (True | False)                     │
+│   │     └── check.evidence ("Found issue LIN-101...")       │
+│   ├── Rejects False Positives (Verbal completion claims)    │
+│   └── Emits Structured TaskResult / TaskEvaluation          │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+METRICS AGGREGATION & REPORTING
+┌─────────────────────────────────────────────────────────────┐
+│ scripts/run_benchmark.py / ScoringEngine                    │
+│   ├── Accuracy (Pass Rate)                                  │
+│   ├── Reliability Score (1.0 - tool_errors / tool_calls)    │
+│   ├── Efficiency (Average Tool Calls per Task)              │
+│   ├── Latency (ms) & Token Cost ($)                         │
+│   └── Composite Multi-Objective Score                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### AO Development Architecture vs. FORGE Runtime Boundary
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ DEVELOPMENT PLANE                                           │
+│   Maximor AO Orchestrator (:3001)                           │
+│     ├── Session Management (forge-1)                        │
+│     ├── Multi-Agent Coding Workstreams (A–H)                │
+│     └── Diagnostics Bridge (/api/ao/diagnostics)            │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ (Code generation & development only)
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│ RUNTIME & BENCHMARK PLANE (Isolated)                        │
+│   FORGE Application Runtime & Evaluator                     │
+│     ├── ZERO dependencies on AO at runtime                  │
+│     ├── Evaluates FORGE agents, NOT development workflow    │
+│     └── 100% reproducible offline or with live LLMs         │
+└─────────────────────────────────────────────────────────────┘
+```

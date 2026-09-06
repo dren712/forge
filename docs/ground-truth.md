@@ -397,3 +397,76 @@ VERIFIED (Live multi-turn enterprise execution completed with glm-4-7-flash via 
 
 ## Known Limitations
 - Standard sandbox mode blocks outbound HTTPS connections; live provider executions (`scripts/test_live_enterprise_runtime.py`) require network approval, whereas all CI unit tests run offline in `FORGE_TEST_MODE=1`.
+---
+
+# S4 Status
+
+Benchmark:
+VERIFIED (v2.0.0 third_party_automation benchmark formalized with explicit versioning, creation timestamp, and metadata)
+
+Tasks:
+VERIFIED (10 standardized enterprise tasks spanning CRM, Sentry, Linear, Slack, GitHub with explicit goals, allowed tools, hidden constraints, and failure modes)
+
+Evaluator:
+VERIFIED (v2.0.0 objective TaskEvaluator inspecting filesystem and state files directly, returning granular TaskCheck records with evidence, rejecting verbal claims without state changes)
+
+Reset/Isolation:
+VERIFIED (setup_task and reset_task guarantee pristine deterministic state files per task run, complete workspace isolation with zero cross-task bleeding)
+
+Benchmark CLI:
+VERIFIED (scripts/run_benchmark.py supports --benchmark, --version, --tasks, --mode, --provider, --repeat, --output, --json with full metric computation)
+
+AO Integration:
+PARTIAL / UNVERIFIED (AO CLI and daemon verified live on host port 3001, harness installed but unauthenticated; live task invocation truthfully marked UNVERIFIED)
+
+AO Diagnostics:
+VERIFIED (GET /api/ao/diagnostics, GET /api/ao/doctor, and GET /api/ao/status expose complete environment state and failure transparency)
+
+Automated Tests:
+VERIFIED (49/49 passing in 1.5s, 10/10 in test_benchmark_integrity.py covering metadata, reset, isolation, evaluator self-test, false-positive rejection, false-negative acceptance, negative constraints, and AO diagnostics)
+
+## Files Changed
+- `apps/api/app/benchmarks/base.py`: Added `goal`, `allowed_tools`, `constraints`, `hidden_constraints`, `primary_skill`, `main_failure_mode`, `starting_state` to `BenchmarkTask`; added `TaskCheck` model; updated `TaskEvaluation` with `checks`, `failures`, `duration_ms`, `tool_calls`, `model_calls`, `usage`; aliased `TaskResult = TaskEvaluation`; updated `Benchmark` Protocol with `benchmark_id`, `name`, `version`, `evaluator_version`, `created_at`, `reset_task`.
+- `apps/api/app/benchmarks/third_party_benchmark.py`: Implemented version `2.0.0` enterprise benchmark with 10 hardened tasks, pristine `setup_task`, deterministic `reset_task`, and objective `evaluate_task` generating granular `TaskCheck` evidence across 5 enterprise tools.
+- `apps/api/app/benchmarks/software_engineering.py`: Conformed to `Benchmark` protocol with `benchmark_id="software_engineering"`, `v1.0.0`, `reset_task`, and check-level evaluation.
+- `apps/api/app/benchmarks/registry.py`: Exposed benchmark metadata in `list_benchmarks()` (`benchmark_id`, `evaluator_version`, `created_at`).
+- `apps/api/app/agents/ao_integration.py`: Enhanced `AOOrchestratorBridge` with `get_version()`, `run_doctor()`, `get_status()`, and `get_diagnostics()`.
+- `apps/api/app/api/routes.py`: Added `GET /api/ao/diagnostics` endpoint.
+- `scripts/run_benchmark.py`: Created production benchmark CLI supporting `--benchmark`, `--version`, `--tasks`, `--mode`, `--provider`, `--repeat`, `--output`, `--json`.
+- `apps/api/tests/test_benchmark_integrity.py`: Created 10 automated benchmark integrity tests (metadata, task matrix, reset guarantee, isolation guarantee, evaluator correct/incorrect state, false-positive rejection, false-negative acceptance, negative constraints, AO diagnostics).
+- `docs/benchmark.md`: Created comprehensive documentation of benchmark purpose, environment, 10-task matrix, hidden constraints, objective evaluation, metrics, and baseline results.
+- `docs/ao.md`: Created comprehensive documentation of AO development role, workstreams, host environment audit, diagnostics, and truth-in-reporting status.
+- `docs/architecture.md`: Appended `# S4 Benchmark & Evaluation Architecture`.
+
+## Tests Run
+- `.venv/bin/pytest apps/api/tests/test_benchmark_integrity.py -v`: 10/10 passed in 0.22s.
+- `.venv/bin/pytest apps/api/tests/ -v`: 49/49 passed in 1.54s (100% green).
+- `npm --prefix apps/web run build`: Exit code 0 (5/5 static and dynamic pages generated with 0 errors).
+
+## Benchmark Results (Empirical CLI Run)
+Executed `scripts/run_benchmark.py --benchmark third_party_automation`:
+- **Baseline (Naive Agent)**:
+  - Tasks Passed: 2 / 10 (20.0%)
+  - Reliability Score: 75.5%
+  - Total Tool Calls: 49
+  - Tool Errors: 24
+  - Composite Score: 0.354
+- **Evolved (FORGE Memory-Guided Agent)**:
+  - Tasks Passed: 10 / 10 (100.0%)
+  - Reliability Score: 95.0%
+  - Total Tool Calls: 20
+  - Tool Errors: 1
+  - Composite Score: 0.985
+- **Performance Delta**: +80.0% accuracy, +19.5% reliability, -59.2% tool calls, -95.8% tool errors.
+
+## AO Host Audit
+- **AO Binary**: `/opt/homebrew/bin/ao` (`ao version dev`) — PRESENT
+- **AO Daemon**: Port 3001, PID 8548 — RUNNING
+- **Project / Session**: `forge` / `forge-1` — REGISTERED
+- **Harness**: `claude-code` v2.1.81 — PRESENT
+- **Harness Auth**: Unauthenticated (`Not logged in`) — UNAUTHENTICATED
+- **Task Invocation**: Truthfully classified as `UNVERIFIED`.
+
+## Architecture Decisions
+- Strictly separated the AO development orchestrator from the FORGE runtime and benchmark planes; benchmark measurements strictly evaluate FORGE agents, not development workflows.
+- Implemented state-based multi-check objective evaluation (`TaskCheck`) ensuring verbal completion claims without real state mutations are strictly rejected.

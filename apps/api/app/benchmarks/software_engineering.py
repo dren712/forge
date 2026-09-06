@@ -2,7 +2,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import List
-from app.benchmarks.base import Benchmark, BenchmarkTask, TaskEvaluation
+from app.benchmarks.base import Benchmark, BenchmarkTask, TaskEvaluation, TaskCheck
 from app.agents.state import AgentState
 from app.tools.test_runner import TestRunnerTool
 
@@ -102,11 +102,18 @@ TASKS_DATA = [
 
 
 class SoftwareEngineeringBenchmark(Benchmark):
-    name = "software_engineering"
-    version = "v1"
+    benchmark_id: str = "software_engineering"
+    name: str = "software_engineering"
+    version: str = "1.0.0"
+    evaluator_version: str = "1.0.0"
+    created_at: str = "2026-03-01T00:00:00Z"
 
     def list_tasks(self) -> List[BenchmarkTask]:
         return [BenchmarkTask(**t) for t in TASKS_DATA]
+
+    async def reset_task(self, task: BenchmarkTask, workspace: Path) -> None:
+        """Resets workspace and re-seeds clean task repository."""
+        await self.setup_task(task, workspace)
 
     async def setup_task(self, task: BenchmarkTask, workspace: Path) -> None:
         """Seeds the workspace with task repository files and pytest tests."""
@@ -397,11 +404,21 @@ class SoftwareEngineeringBenchmark(Benchmark):
         score = 1.0 if test_result.passed else 0.0
         reason = "All unit tests passed successfully." if test_result.passed else f"Tests failed with exit code {test_result.exit_code}."
 
+        checks = [
+            TaskCheck(
+                name="pytest_unit_tests",
+                passed=test_result.passed,
+                evidence=f"exit_code={test_result.exit_code}, failed_tests={test_result.failed_tests}",
+            )
+        ]
         return TaskEvaluation(
             task_id=task.id,
             passed=test_result.passed,
             score=score,
             reason=reason,
+            checks=checks,
+            tool_calls=state.tool_call_count,
+            failures=test_result.failed_tests,
             test_stdout=test_result.stdout,
             test_stderr=test_result.stderr,
             failed_tests=test_result.failed_tests,
