@@ -246,3 +246,73 @@ Canonical Provenance:
 1. Simulated Dual-Pass in `POST /api/experiments/{id}/learning-run`: `ExperimentService.run_learning_loop` still returns hardcoded Cold vs Warm metrics rather than executing two live sequential ReAct passes with live delta calculations.
 2. External CLI Dependency on AO: Maximor AO (`ao`) remains an optional bridge that checks local CLI presence; if absent, it returns `available: false` without halting core operations.
 3. Experiential Labs Provider Live Validation: `apps/api/app/providers/experiential.py` conforms to `LLMProvider` but requires an active `EXPLABS_API_KEY` for live network verification.
+
+---
+
+# S2 Status
+
+Provider abstraction:
+VERIFIED (Canonical LLMProvider Protocol with normalized LLMResponse and ToolCallItem)
+
+TensorMux:
+VERIFIED (Live generation, native tool calling, and multi-turn verified on glm-4-7-flash)
+
+OpenAI:
+VERIFIED (Live generation, native tool calling, and multi-turn verified on gpt-5-nano)
+
+Mock provider:
+VERIFIED (DeterministicMockProvider in offline CI mode with 31/31 passing unit/contract tests)
+
+Tool calling:
+VERIFIED (Empirical live multi-turn tool calling verified on both TensorMux and OpenAI)
+
+Structured output:
+VERIFIED (JSON extraction, repair, schema validation, and bounded retry in AgentArchitect and FailureAnalyzer)
+
+Streaming:
+PARTIAL (Upstream SSE streaming verified, non-streaming remains verified production default due to Python 3.13 httpcore2 generator teardown)
+
+Token accounting:
+VERIFIED (input, output, and total token accounting captured from live provider responses and persisted on TraceEvent and AgentState)
+
+Cost accounting:
+VERIFIED (Model-aware pricing estimates computed from exact reported token counts)
+
+Error handling:
+VERIFIED (Full error hierarchy normalized to ProviderAuthenticationError, ProviderInvalidRequestError, ProviderTimeoutError, ProviderRateLimitError, ProviderResponseFormatError)
+
+Security:
+VERIFIED (Zero API keys in tracked files, git history, or diagnostic endpoints; GET /api/providers/status reports non-sensitive health metadata only)
+
+## Files Changed
+- `apps/api/app/core/errors.py`: Added `ProviderAuthenticationError`, `ProviderInvalidRequestError`, and `ProviderResponseFormatError`.
+- `apps/api/app/core/config.py`: Added role-specific routing flags (`forge_architect_provider`, `forge_executor_provider`, `forge_reflector_provider`, `forge_mutator_provider`).
+- `apps/api/app/providers/base.py`: Added `ToolCall` canonical alias and `finish_reason`, `provider`, `model` fields to `LLMResponse`.
+- `apps/api/app/providers/tensormux.py`: Added error normalization (`AuthenticationError`, `BadRequestError`) and metadata population.
+- `apps/api/app/providers/aigrants.py`: Added error normalization and metadata population.
+- `apps/api/app/providers/router.py`: Created lightweight `ModelRouter` supporting role-based provider resolution.
+- `apps/api/app/agents/runtime.py`: Added `provider`, `model`, `finish_reason` to `MODEL_RESPONSE` trace events, and ensured `function.arguments` is JSON-encoded for live multi-turn loops.
+- `apps/api/app/agents/state.py`: Added `latency_ms` field to `AgentState`.
+- `apps/api/app/api/routes.py`: Added `GET /api/providers/status` non-secret diagnostics endpoint.
+- `apps/api/tests/test_model_layer.py`: Added 6 automated tests for provider contracts, router, errors, and diagnostics.
+- `scripts/test_tensormux.py`: Created secure connectivity verification script.
+- `scripts/test_live_models.py`: Created live multi-turn and tool-calling comparison script.
+- `scripts/test_runtime_tensormux.py`: Created live runtime execution test with TensorMux.
+- `docs/model-layer.md`: Created comprehensive model intelligence documentation.
+
+## Tests Run
+- `PYTHONPATH=apps/api .venv/bin/pytest -v apps/api/tests/`: 31/31 passed in 1.22s.
+- `npm run build` in `apps/web/`: Exit code 0, 5/5 static and dynamic pages generated.
+
+## Live Tests
+- `python scripts/test_tensormux.py`: PASSED (Single turn pong, 2063.4ms, 133 tokens).
+- `python scripts/test_live_models.py`: PASSED for both TensorMux (glm-4-7-flash, 3 turns, 575 tokens, 2179.9ms) and OpenAI (gpt-5-nano, 3 turns, 641 tokens, 3233.3ms).
+- `python scripts/test_runtime_tensormux.py`: PASSED (Full AgentRuntime execution with glm-4-7-flash, COMPLETED in 3 steps, 2 tool calls, 1824 tokens, 4453.9ms).
+
+## Known Limitations
+- Streaming generator cleanup warning in Python 3.13 httpcore2 when terminating async SSE stream. Non-streaming is the designated production execution loop.
+- Upstream chat completion API strictly requires double-quoted JSON string for `function.arguments` in assistant history.
+
+## Architecture Decisions
+- Adopted lightweight `ModelRouter` (`apps/api/app/providers/router.py`) to decouple domain roles (`ARCHITECT`, `EXECUTOR`, `REFLECTOR`, `MUTATOR`) from concrete model names.
+- Retained strict `DeterministicMockProvider` for all offline CI unit tests to ensure zero dependency on network or external credits during automated builds.

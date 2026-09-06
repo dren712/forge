@@ -3,9 +3,16 @@ import json
 import asyncio
 from typing import Any
 import os
-from openai import AsyncOpenAI, APIError, APITimeoutError, RateLimitError
+from openai import AsyncOpenAI, APIError, APITimeoutError, RateLimitError, BadRequestError, AuthenticationError
 
-from app.core.errors import ProviderError, ProviderTimeoutError, ProviderRateLimitError
+from app.core.errors import (
+    ProviderError,
+    ProviderTimeoutError,
+    ProviderRateLimitError,
+    ProviderAuthenticationError,
+    ProviderInvalidRequestError,
+    ProviderResponseFormatError,
+)
 from app.providers.base import LLMProvider, LLMResponse, ToolCallItem
 
 
@@ -106,9 +113,16 @@ class AIGrantsIndiaProvider(LLMProvider):
                 output_tokens=output_tokens,
                 total_tokens=total_tokens,
                 latency_ms=latency_ms,
+                finish_reason=choice.finish_reason if hasattr(choice, "finish_reason") else None,
+                provider="aigrants",
+                model=self.model,
                 raw_response=response.model_dump() if hasattr(response, "model_dump") else str(response),
             )
 
+        except AuthenticationError as e:
+            raise ProviderAuthenticationError(f"AI Grants authentication failed: {e}") from e
+        except BadRequestError as e:
+            raise ProviderInvalidRequestError(f"AI Grants invalid request: {e}") from e
         except APITimeoutError as e:
             raise ProviderTimeoutError(f"AI Grants GPT-5 Nano timed out: {e}")
         except RateLimitError as e:

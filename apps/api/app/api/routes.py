@@ -20,12 +20,55 @@ from app.services.experiment_service import ExperimentService
 from app.benchmarks.registry import benchmark_registry
 from app.tools.registry import default_registry
 
+from app.core.config import settings
+
 router = APIRouter(prefix="/api")
 
 
 @router.get("/health")
 async def health():
     return {"status": "ok", "product": "FORGE", "tagline": "Agents don't just run. They evolve."}
+
+
+@router.get("/providers/status")
+async def provider_status():
+    """Returns non-sensitive provider configuration and availability diagnostics."""
+    tmx_configured = bool(settings.tensormux_api_key and not settings.tensormux_api_key.startswith("tmx_your_api_key"))
+    ai_configured = bool(settings.aigrants_api_key and not settings.aigrants_api_key.startswith("sk-proj-placeholder"))
+    sm_configured = bool(settings.smallest_api_key and not settings.smallest_api_key.startswith("sm_placeholder"))
+    exp_configured = bool(settings.explabs_api_key and not settings.explabs_api_key.startswith("explabs_placeholder"))
+
+    return {
+        "active_primary_provider": settings.forge_llm_provider,
+        "test_mode": settings.forge_test_mode == "1",
+        "role_routing": {
+            "ARCHITECT": settings.forge_architect_provider,
+            "EXECUTOR": settings.forge_executor_provider,
+            "REFLECTOR": settings.forge_reflector_provider,
+            "MUTATOR": settings.forge_mutator_provider,
+        },
+        "providers": {
+            "tensormux": {
+                "configured": tmx_configured,
+                "model": settings.tensormux_model,
+                "base_url": settings.tensormux_base_url,
+            },
+            "aigrants": {
+                "configured": ai_configured,
+                "model": settings.aigrants_model,
+                "base_url": settings.aigrants_base_url,
+            },
+            "smallest_voice": {
+                "configured": sm_configured,
+                "voice_id": settings.smallest_voice_id,
+            },
+            "experiential": {
+                "configured": exp_configured,
+                "model": settings.explabs_model,
+                "base_url": settings.explabs_base_url,
+            },
+        },
+    }
 
 
 # ---------------------- EXPERIMENTS ----------------------

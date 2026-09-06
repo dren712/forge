@@ -2,14 +2,16 @@ import time
 import json
 import asyncio
 from typing import Any
-from openai import AsyncOpenAI, APIError, APITimeoutError, RateLimitError, BadRequestError
+from openai import AsyncOpenAI, APIError, APITimeoutError, RateLimitError, BadRequestError, AuthenticationError
 
 from app.core.config import settings
 from app.core.errors import (
     ProviderError,
     ProviderTimeoutError,
     ProviderRateLimitError,
-    ProviderInvalidResponseError,
+    ProviderAuthenticationError,
+    ProviderInvalidRequestError,
+    ProviderResponseFormatError,
 )
 from app.providers.base import LLMProvider, LLMResponse, ToolCallItem
 
@@ -117,15 +119,20 @@ class TensorMuxProvider(LLMProvider):
                     output_tokens=output_tokens,
                     total_tokens=total_tokens,
                     latency_ms=latency_ms,
+                    finish_reason=choice.finish_reason if hasattr(choice, "finish_reason") else None,
+                    provider="tensormux",
+                    model=self.model,
                     raw_response=response.model_dump() if hasattr(response, "model_dump") else str(response),
                 )
 
+            except AuthenticationError as e:
+                raise ProviderAuthenticationError(f"TensorMux authentication failed: {e}") from e
+            except BadRequestError as e:
+                raise ProviderInvalidRequestError(f"Invalid request to TensorMux: {e}") from e
             except APITimeoutError as e:
                 last_exception = ProviderTimeoutError(f"TensorMux request timed out: {e}")
             except RateLimitError as e:
                 last_exception = ProviderRateLimitError(f"TensorMux rate limit exceeded: {e}")
-            except BadRequestError as e:
-                raise ProviderInvalidResponseError(f"Invalid request to TensorMux: {e}") from e
             except APIError as e:
                 last_exception = ProviderError(f"TensorMux API error: {e}")
             except Exception as e:

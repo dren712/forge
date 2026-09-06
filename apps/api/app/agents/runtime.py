@@ -1,4 +1,5 @@
 import time
+import json
 import asyncio
 from pathlib import Path
 from typing import Any
@@ -162,6 +163,9 @@ class AgentRuntime:
             await self._emit_event(
                 EventType.MODEL_RESPONSE,
                 {
+                    "provider": getattr(llm_response, "provider", "llm"),
+                    "model": getattr(llm_response, "model", self.spec.model),
+                    "finish_reason": getattr(llm_response, "finish_reason", "stop"),
                     "content_preview": (llm_response.content or "")[:300],
                     "tool_calls_count": len(llm_response.tool_calls),
                     "tokens": llm_response.total_tokens,
@@ -184,7 +188,10 @@ class AgentRuntime:
                         {
                             "id": tc.id,
                             "type": "function",
-                            "function": {"name": tc.name, "arguments": tc.arguments},
+                            "function": {
+                                "name": tc.name,
+                                "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else str(tc.arguments),
+                            },
                         }
                         for tc in effective_tool_calls
                     ],
@@ -348,4 +355,5 @@ class AgentRuntime:
                 execution_id,
             )
 
+        state.latency_ms = (time.perf_counter() - start_runtime) * 1000.0
         return state

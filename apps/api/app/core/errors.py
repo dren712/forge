@@ -18,9 +18,23 @@ class ProviderRateLimitError(ProviderError):
     pass
 
 
-class ProviderInvalidResponseError(ProviderError):
+class ProviderAuthenticationError(ProviderError):
+    """Raised when API key or authentication fails."""
+    pass
+
+
+class ProviderInvalidRequestError(ProviderError):
+    """Raised when request parameters or schema are invalid."""
+    pass
+
+
+class ProviderResponseFormatError(ProviderError):
     """Raised when model returns malformed or invalid output."""
     pass
+
+
+# Backward compatibility alias
+ProviderInvalidResponseError = ProviderResponseFormatError
 
 
 class ToolExecutionError(ForgeError):

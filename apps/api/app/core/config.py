@@ -20,6 +20,10 @@ class Settings(BaseModel):
     forge_env: str = Field(default_factory=lambda: os.getenv("FORGE_ENV", "development"))
     forge_test_mode: str = Field(default_factory=lambda: os.getenv("FORGE_TEST_MODE", "0"))
     forge_llm_provider: str = Field(default_factory=lambda: os.getenv("FORGE_LLM_PROVIDER", "tensormux"))
+    forge_architect_provider: str = Field(default_factory=lambda: os.getenv("FORGE_ARCHITECT_PROVIDER", "tensormux"))
+    forge_executor_provider: str = Field(default_factory=lambda: os.getenv("FORGE_EXECUTOR_PROVIDER", "tensormux"))
+    forge_reflector_provider: str = Field(default_factory=lambda: os.getenv("FORGE_REFLECTOR_PROVIDER", "openai"))
+    forge_mutator_provider: str = Field(default_factory=lambda: os.getenv("FORGE_MUTATOR_PROVIDER", "tensormux"))
 
     # Sponsor Provider Configs
     aigrants_api_key: str = Field(default_factory=lambda: os.getenv("AIGRANTS_API_KEY") or os.getenv("OPENAI_API_KEY", ""))

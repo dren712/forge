@@ -19,3 +19,4 @@ class AgentState(BaseModel):
     verification_passed: bool = False
     verification_feedback: str | None = None
     final_output: str | None = None
+    latency_ms: float = 0.0

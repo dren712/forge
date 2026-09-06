@@ -8,6 +8,10 @@ class ToolCallItem(BaseModel):
     arguments: dict[str, Any]
 
 
+# Canonical alias
+ToolCall = ToolCallItem
+
+
 class LLMResponse(BaseModel):
     content: str | None = None
     tool_calls: list[ToolCallItem] = Field(default_factory=list)
@@ -15,6 +19,9 @@ class LLMResponse(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     latency_ms: float = 0.0
+    finish_reason: str | None = None
+    provider: str = ""
+    model: str = ""
     raw_response: Any = None
 
 
