@@ -47,6 +47,7 @@ export interface Generation {
     total_tool_calls: number;
     verification_pass_rate: number;
     failure_breakdown: Record<string, number>;
+    recovery_rate?: number;
   } | null;
   benchmark_id: string;
   status: string;

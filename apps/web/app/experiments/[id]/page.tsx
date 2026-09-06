@@ -196,7 +196,11 @@ export default function ExperimentDetailPage() {
     return <div className="py-20 text-center text-gray-400">Loading experiment...</div>;
   }
 
-  const currentGen = generations.find((g) => g.id === experiment.current_generation_id) || generations[generations.length - 1];
+  const currentGen =
+    generations.find((g) => g.id === experiment.current_generation_id) ||
+    (generations.length > 0 ? generations[generations.length - 1] : null);
+  const bestGen =
+    generations.find((g) => g.id === experiment.best_generation_id) || null;
   const metrics = currentGen?.metrics;
 
   return (
@@ -206,13 +210,24 @@ export default function ExperimentDetailPage() {
         <ArrowLeft className="w-4 h-4" /> Back to Experiments
       </Link>
 
-      {/* Header Card */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#30363d]">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-white tracking-tight">{experiment.name}</h1>
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+      {/* Command Center Card */}
+      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+        {/* Top Bar: Name, Status & Prominent Actions */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-[#30363d]">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400 shadow-sm">
+                <Flame className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-orange-400 block">
+                  Experiment Command Center
+                </span>
+                <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                  {experiment.name}
+                </h1>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
                 experiment.status === "RUNNING"
                   ? "bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse"
                   : experiment.status === "COMPLETED"
@@ -222,25 +237,15 @@ export default function ExperimentDetailPage() {
                 {experiment.status}
               </span>
             </div>
-            <p className="mt-1 text-sm text-gray-400">{experiment.goal}</p>
-            <div className="mt-3 flex flex-wrap gap-2 items-center text-xs">
-              <span className="text-gray-500">Benchmark:</span>
-              <span className="font-mono text-gray-300 px-2 py-0.5 rounded bg-[#0d1117] border border-[#30363d]">
-                {experiment.benchmark_id} (10 tasks)
-              </span>
-              <span className="text-gray-500 ml-2">Tools:</span>
-              {experiment.tool_ids.map((t) => (
-                <span key={t} className="font-mono text-gray-300 px-2 py-0.5 rounded bg-[#0d1117] border border-[#30363d]">
-                  {t}
-                </span>
-              ))}
-            </div>
+            <p className="text-xs text-gray-500 font-mono">
+              Experiment ID: {experiment.id}
+            </p>
           </div>
 
-          {/* Action Triggers */}
+          {/* Prominent Actions Bar */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0d1117] border border-[#30363d] text-xs text-gray-400">
-              <span>Task scope:</span>
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#0d1117] border border-[#30363d] text-xs text-gray-400 shadow-inner">
+              <span>Scope:</span>
               <select
                 value={taskLimit}
                 onChange={(e) => setTaskLimit(parseInt(e.target.value))}
@@ -253,126 +258,277 @@ export default function ExperimentDetailPage() {
               </select>
             </div>
 
-            {generations.length === 0 ? (
-              <button
-                onClick={handleGenerate}
-                disabled={!!loadingAction}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold shadow-md shadow-orange-500/20 disabled:opacity-50"
-              >
-                <Sparkles className="w-4 h-4" />
-                {loadingAction === "generate" ? "Designing G0..." : "Generate G0 Agent"}
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={handleRun}
-                  disabled={!!loadingAction}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-md shadow-blue-600/20 disabled:opacity-50"
-                >
-                  <Play className="w-4 h-4" />
-                  {loadingAction === "run" ? "Running..." : "Run Benchmark"}
-                </button>
-                <button
-                  onClick={handleEvolve}
-                  disabled={!!loadingAction || !currentGen?.metrics}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white text-sm font-semibold shadow-md shadow-orange-500/20 disabled:opacity-50"
-                >
-                  <RotateCw className={`w-4 h-4 ${loadingAction === "evolve" ? "animate-spin" : ""}`} />
-                  {loadingAction === "evolve" ? "Evolving..." : "Evolve Agent"}
-                </button>
-                <button
-                  onClick={handleLearningLoop}
-                  disabled={!!loadingAction}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold shadow-md shadow-emerald-600/20 disabled:opacity-50"
-                  title="Test autonomous tool learning and self-reflection"
-                >
-                  <Brain className={`w-4 h-4 ${loadingAction === "learning" ? "animate-pulse" : ""}`} />
-                  {loadingAction === "learning" ? "Learning..." : "Test Learning Loop"}
-                </button>
-              </>
-            )}
+            {/* Action 1: Generate Agent */}
+            <button
+              onClick={handleGenerate}
+              disabled={!!loadingAction}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-sm font-semibold shadow-lg shadow-orange-500/20 transition-all disabled:opacity-50 active:scale-95 cursor-pointer"
+              title="Synthesize and initialize agent architecture"
+            >
+              <Sparkles className={`w-4 h-4 ${loadingAction === "generate" ? "animate-spin" : ""}`} />
+              <span>{loadingAction === "generate" ? "Generating Agent..." : "Generate Agent"}</span>
+            </button>
+
+            {/* Action 2: Run Benchmark */}
+            <button
+              onClick={handleRun}
+              disabled={generations.length === 0 || !!loadingAction}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-lg shadow-blue-600/20 transition-all disabled:opacity-50 active:scale-95 cursor-pointer"
+              title="Execute benchmark tasks against current agent"
+            >
+              <Play className={`w-4 h-4 ${loadingAction === "run" ? "animate-pulse" : ""}`} />
+              <span>{loadingAction === "run" ? "Running Benchmark..." : "Run Benchmark"}</span>
+            </button>
+
+            {/* Action 3: Evolve Agent */}
+            <button
+              onClick={handleEvolve}
+              disabled={generations.length === 0 || !currentGen?.metrics || !!loadingAction}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 hover:from-rose-600 hover:to-orange-600 text-white text-sm font-semibold shadow-lg shadow-rose-500/20 transition-all disabled:opacity-50 active:scale-95 cursor-pointer"
+              title="Diagnose failures and evolve candidate generation"
+            >
+              <RotateCw className={`w-4 h-4 ${loadingAction === "evolve" ? "animate-spin" : ""}`} />
+              <span>{loadingAction === "evolve" ? "Evolving Agent..." : "Evolve Agent"}</span>
+            </button>
+
+            {/* Auxiliary Action: Test Learning Loop */}
+            <button
+              onClick={handleLearningLoop}
+              disabled={!!loadingAction}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-all disabled:opacity-50 cursor-pointer"
+              title="Test autonomous tool learning and self-reflection"
+            >
+              <Brain className={`w-3.5 h-3.5 ${loadingAction === "learning" ? "animate-pulse" : ""}`} />
+              <span>{loadingAction === "learning" ? "Learning..." : "Learning Loop"}</span>
+            </button>
           </div>
         </div>
 
-        {/* Current Generation Metric Scorecards */}
-        {metrics ? (
-          <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Accuracy</span>
-              <div className="mt-1 text-2xl font-black text-emerald-400 font-mono">
-                {(metrics.accuracy * 100).toFixed(1)}%
-              </div>
-              <span className="text-[11px] text-gray-500">{metrics.successful_tasks} of {metrics.total_tasks} passed</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Reliability</span>
-              <div className="mt-1 text-2xl font-black text-cyan-400 font-mono">
-                {(metrics.reliability * 100).toFixed(1)}%
-              </div>
-              <span className="text-[11px] text-gray-500">Verification & recovery</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Cost / Task</span>
-              <div className="mt-1 text-2xl font-black text-amber-400 font-mono">
-                ${metrics.avg_cost_per_task.toFixed(4)}
-              </div>
-              <span className="text-[11px] text-gray-500">{metrics.total_tokens.toLocaleString()} tokens</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Avg Latency</span>
-              <div className="mt-1 text-2xl font-black text-purple-400 font-mono">
-                {(metrics.avg_latency_ms / 1000).toFixed(1)}s
-              </div>
-              <span className="text-[11px] text-gray-500">{metrics.total_tool_calls} tool executions</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Composite Score</span>
-              <div className="mt-1 text-2xl font-black text-orange-400 font-mono">
-                {metrics.composite_score.toFixed(3)}
-              </div>
-              <span className="text-[11px] text-gray-500">Correctness + Efficiency</span>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-6 p-4 rounded-xl bg-[#0d1117] border border-dashed border-[#30363d] text-center text-sm text-gray-400">
-            {generations.length === 0
-              ? "No agent architecture generated yet. Click 'Generate G0 Agent' above."
-              : "Generation generated. Click 'Run Benchmark' to execute tasks and capture initial baseline metrics."}
-          </div>
-        )}
-
-        {/* Live Sponsor Token Burn & Credit Economics Banner */}
-        <div className="mt-4 pt-4 border-t border-[#30363d]/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span className="text-gray-400 font-semibold uppercase tracking-wider text-[10px]">Live Sponsor Credit Pool:</span>
-            <span className="font-mono text-white bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded text-[11px]">
-              TensorMux MoE (glm-4-7-flash)
+        {/* Experiment Specification Grid: Goal, Benchmark, Current & Best Generation, Status */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          {/* Goal (spans full row on md, 2 cols on lg) */}
+          <div className="lg:col-span-2 p-4 rounded-xl bg-[#0d1117] border border-[#30363d] space-y-1.5">
+            <span className="text-gray-400 font-semibold uppercase tracking-wider text-[11px] block">
+              Goal
             </span>
-            <span className="font-mono text-white bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded text-[11px]">
-              OpenAI (gpt-5-nano)
-            </span>
-            <span className="font-mono text-white bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded text-[11px]">
-              Smallest.ai Waves Voice
-            </span>
+            <p className="text-gray-200 text-sm leading-relaxed">
+              {experiment.goal}
+            </p>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="text-gray-400">
-              Total Tokens Processed:{" "}
-              <span className="font-mono font-bold text-white">
-                {generations.reduce((acc, g) => acc + (g.metrics?.total_tokens || 0), 0).toLocaleString()}
+          {/* Benchmark */}
+          <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d] space-y-1.5">
+            <span className="text-gray-400 font-semibold uppercase tracking-wider text-[11px] block">
+              Benchmark
+            </span>
+            <div className="text-white font-mono font-bold text-sm">
+              {experiment.benchmark_id}
+            </div>
+            <p className="text-[11px] text-gray-500 truncate">
+              Tools: {experiment.tool_ids.join(", ")}
+            </p>
+          </div>
+
+          {/* Current & Best Generation */}
+          <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d] space-y-2.5">
+            <div>
+              <span className="text-gray-400 font-semibold uppercase tracking-wider text-[11px] block">
+                Current Generation
+              </span>
+              <div className="text-sm font-mono font-bold text-white">
+                {currentGen ? `Generation ${currentGen.generation_number}` : "Not available"}
+              </div>
+              <p className="text-[10px] text-gray-500 font-mono truncate">
+                {currentGen ? `ID: ${currentGen.id}` : "No active candidate"}
+              </p>
+            </div>
+
+            <div className="pt-2 border-t border-[#212631]">
+              <span className="text-gray-400 font-semibold uppercase tracking-wider text-[11px] block">
+                Best Generation
+              </span>
+              <div className="text-sm font-mono font-bold text-emerald-400">
+                {bestGen
+                  ? `Generation ${bestGen.generation_number}`
+                  : experiment.best_generation_id
+                  ? `ID: ${experiment.best_generation_id.slice(0, 8)}...`
+                  : "Not available"}
+              </div>
+              <p className="text-[10px] text-gray-500 font-mono truncate">
+                {bestGen ? `ID: ${bestGen.id}` : (experiment.best_generation_id ? `ID: ${experiment.best_generation_id}` : "No accepted generation yet")}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Primary Metrics Group (4 metrics) */}
+        <div className="space-y-2 pt-2 border-t border-[#30363d]/70">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5 text-orange-400" /> Primary Metrics
+            </span>
+            <span className="text-[11px] text-gray-500 font-mono">
+              {currentGen ? `Evaluation: Generation ${currentGen.generation_number}` : "Awaiting agent generation"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Accuracy */}
+            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block">
+                Accuracy
+              </span>
+              <div className={`mt-1 font-black font-mono ${metrics?.accuracy !== undefined && metrics?.accuracy !== null ? "text-2xl text-emerald-400" : "text-lg text-gray-500"}`}>
+                {metrics?.accuracy !== undefined && metrics?.accuracy !== null
+                  ? `${(metrics.accuracy * 100).toFixed(1)}%`
+                  : "Not available"}
+              </div>
+              <span className="text-[11px] text-gray-500 mt-1 block">
+                {metrics?.successful_tasks !== undefined && metrics?.total_tasks
+                  ? `${metrics.successful_tasks} of ${metrics.total_tasks} passed`
+                  : "Benchmark task pass rate"}
               </span>
             </div>
-            <div className="text-emerald-400 font-semibold">
-              Empirical Savings: <span className="font-mono font-bold">-70.8%</span> per task
+
+            {/* Reliability */}
+            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block">
+                Reliability
+              </span>
+              <div className={`mt-1 font-black font-mono ${metrics?.reliability !== undefined && metrics?.reliability !== null ? "text-2xl text-cyan-400" : "text-lg text-gray-500"}`}>
+                {metrics?.reliability !== undefined && metrics?.reliability !== null
+                  ? `${(metrics.reliability * 100).toFixed(1)}%`
+                  : "Not available"}
+              </div>
+              <span className="text-[11px] text-gray-500 mt-1 block">
+                Execution fidelity
+              </span>
+            </div>
+
+            {/* Cost / task */}
+            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block">
+                Cost / task
+              </span>
+              <div className={`mt-1 font-black font-mono ${metrics?.avg_cost_per_task !== undefined && metrics?.avg_cost_per_task !== null ? "text-2xl text-amber-400" : "text-lg text-gray-500"}`}>
+                {metrics?.avg_cost_per_task !== undefined && metrics?.avg_cost_per_task !== null
+                  ? `$${metrics.avg_cost_per_task.toFixed(4)}`
+                  : "Not available"}
+              </div>
+              <span className="text-[11px] text-gray-500 mt-1 block">
+                {metrics?.total_tokens !== undefined ? `${metrics.total_tokens.toLocaleString()} tokens total` : "Token consumption cost"}
+              </span>
+            </div>
+
+            {/* Latency / task */}
+            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block">
+                Latency / task
+              </span>
+              <div className={`mt-1 font-black font-mono ${metrics?.avg_latency_ms !== undefined && metrics?.avg_latency_ms !== null ? "text-2xl text-purple-400" : "text-lg text-gray-500"}`}>
+                {metrics?.avg_latency_ms !== undefined && metrics?.avg_latency_ms !== null
+                  ? `${(metrics.avg_latency_ms / 1000).toFixed(2)}s`
+                  : "Not available"}
+              </div>
+              <span className="text-[11px] text-gray-500 mt-1 block">
+                {metrics?.avg_latency_ms !== undefined ? `${Math.round(metrics.avg_latency_ms)} ms average` : "Execution latency"}
+              </span>
             </div>
           </div>
         </div>
+
+        {/* Operational & Verification Metrics Group (4 metrics) */}
+        <div className="space-y-2 pt-2 border-t border-[#30363d]/60">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-cyan-400" /> Operational & Verification Metrics
+            </span>
+            <span className="text-[11px] text-gray-500">
+              Tool usage, model calls, verification & recovery
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Tool calls / task */}
+            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block">
+                Tool calls / task
+              </span>
+              <div className={`mt-1 font-black font-mono ${metrics?.total_tasks && metrics.total_tasks > 0 && metrics?.total_tool_calls !== undefined && metrics?.total_tool_calls !== null ? "text-2xl text-white" : "text-lg text-gray-500"}`}>
+                {metrics?.total_tasks && metrics.total_tasks > 0 && metrics?.total_tool_calls !== undefined && metrics?.total_tool_calls !== null
+                  ? (metrics.total_tool_calls / metrics.total_tasks).toFixed(1)
+                  : "Not available"}
+              </div>
+              <span className="text-[11px] text-gray-500 mt-1 block">
+                {metrics?.total_tool_calls !== undefined ? `${metrics.total_tool_calls} total tool calls` : "Tool dispatch frequency"}
+              </span>
+            </div>
+
+            {/* Model calls / task */}
+            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block">
+                Model calls / task
+              </span>
+              <div className={`mt-1 font-black font-mono ${metrics?.total_tasks && metrics.total_tasks > 0 && metrics?.total_model_calls !== undefined && metrics?.total_model_calls !== null ? "text-2xl text-white" : "text-lg text-gray-500"}`}>
+                {metrics?.total_tasks && metrics.total_tasks > 0 && metrics?.total_model_calls !== undefined && metrics?.total_model_calls !== null
+                  ? (metrics.total_model_calls / metrics.total_tasks).toFixed(1)
+                  : "Not available"}
+              </div>
+              <span className="text-[11px] text-gray-500 mt-1 block">
+                {metrics?.total_model_calls !== undefined ? `${metrics.total_model_calls} total model calls` : "Inference calls per benchmark"}
+              </span>
+            </div>
+
+            {/* Verification rate */}
+            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block">
+                Verification rate
+              </span>
+              <div className={`mt-1 font-black font-mono ${metrics?.verification_pass_rate !== undefined && metrics?.verification_pass_rate !== null ? "text-2xl text-teal-400" : "text-lg text-gray-500"}`}>
+                {metrics?.verification_pass_rate !== undefined && metrics?.verification_pass_rate !== null
+                  ? `${(metrics.verification_pass_rate * 100).toFixed(1)}%`
+                  : "Not available"}
+              </div>
+              <span className="text-[11px] text-gray-500 mt-1 block">
+                Deterministic test verification
+              </span>
+            </div>
+
+            {/* Recovery rate */}
+            <div className="p-4 rounded-xl bg-[#0d1117] border border-[#30363d]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 block">
+                Recovery rate
+              </span>
+              <div className={`mt-1 font-black font-mono ${(metrics as any)?.recovery_rate !== undefined && (metrics as any)?.recovery_rate !== null ? "text-2xl text-emerald-400" : "text-lg text-gray-500"}`}>
+                {(metrics as any)?.recovery_rate !== undefined && (metrics as any)?.recovery_rate !== null
+                  ? `${((metrics as any).recovery_rate * 100).toFixed(1)}%`
+                  : "Not available"}
+              </div>
+              <span className="text-[11px] text-gray-500 mt-1 block">
+                {(metrics as any)?.recovery_rate !== undefined ? "Error recovery success" : "Not available"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Composite & Token Summary Footer */}
+        {metrics && (
+          <div className="pt-3 border-t border-[#30363d]/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-gray-400 font-semibold uppercase text-[10px] tracking-wider">Composite Score:</span>
+              <span className="font-mono text-orange-400 font-black text-sm bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded">
+                {metrics.composite_score !== undefined ? metrics.composite_score.toFixed(3) : "Not available"}
+              </span>
+              <span className="text-gray-500 text-[11px]">(Correctness 50% + Reliability 30% + Efficiency 20%)</span>
+            </div>
+
+            <div className="text-gray-400 flex items-center gap-3 font-mono text-[11px]">
+              <span>Total Tokens: <strong className="text-white font-bold">{generations.reduce((acc, g) => acc + (g.metrics?.total_tokens || 0), 0).toLocaleString()}</strong></span>
+              <span>•</span>
+              <span>Evaluated Generations: <strong className="text-white font-bold">{generations.length}</strong></span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
