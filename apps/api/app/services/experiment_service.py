@@ -30,30 +30,7 @@ from app.memory.tool_memory import ToolMemoryStore
 event_broadcasters: Dict[str, List[asyncio.Queue]] = {}
 
 
-from app.providers.aigrants import AIGrantsIndiaProvider
-
-
-def get_llm_provider() -> LLMProvider:
-    """Returns live TensorMuxProvider or AIGrantsIndiaProvider based on environment configuration."""
-    import os
-    if os.getenv("FORGE_TEST_MODE") == "1":
-        return DeterministicMockProvider(mode="baseline")
-
-    preferred = os.getenv("FORGE_LLM_PROVIDER", "tensormux").lower()
-    if preferred in ("aigrants", "openai"):
-        ai_key = os.getenv("AIGRANTS_API_KEY") or os.getenv("OPENAI_API_KEY")
-        if ai_key and not ai_key.startswith("sk-proj-placeholder"):
-            return AIGrantsIndiaProvider(api_key=ai_key, model=os.getenv("AIGRANTS_MODEL", "gpt-5-nano"))
-
-    key = settings.tensormux_api_key
-    if key and not key.startswith("tmx_your_api_key") and len(key) > 5:
-        return TensorMuxProvider(api_key=key, base_url=settings.tensormux_base_url, model=settings.tensormux_model)
-
-    ai_key = os.getenv("AIGRANTS_API_KEY") or os.getenv("OPENAI_API_KEY")
-    if ai_key and len(ai_key) > 10:
-        return AIGrantsIndiaProvider(api_key=ai_key, model=os.getenv("AIGRANTS_MODEL", "gpt-5-nano"))
-
-    return DeterministicMockProvider(mode="baseline")
+from app.providers.factory import get_llm_provider
 
 
 class ExperimentService:

@@ -190,3 +190,59 @@ With repository ground truth established, the immediate next milestone is **Sect
 2. Ensure live SSE events stream for both cold and warm passes.
 3. Compute dynamic cost, latency, and tool-call deltas from genuine `AgentState` records.
 4. Verify with offline deterministic tests and live LLM integration.
+
+---
+
+# S1 Architecture Status
+
+Canonical AgentSpec:
+`apps/api/app/schemas/agent_spec.py:AgentSpec`
+
+Canonical LLMProvider:
+`apps/api/app/providers/base.py:LLMProvider`
+
+Canonical Tool:
+`apps/api/app/tools/base.py:Tool`
+
+Canonical Benchmark:
+`apps/api/app/benchmarks/base.py:Benchmark`
+
+Canonical Evaluator:
+`apps/api/app/benchmarks/base.py:Benchmark.evaluate_task` & `apps/api/app/evaluation/scoring.py`
+
+Canonical FailureAnalyzer:
+`apps/api/app/evaluation/failure_analyzer.py:FailureAnalyzer`
+
+Canonical MemoryStore:
+`apps/api/app/memory/tool_memory.py:ToolMemoryStore`
+
+Canonical Mutation:
+`apps/api/app/evolution/mutation.py:Mutation` & `apps/api/app/evolution/mutation_generator.py:MutationGenerator`
+
+Canonical AcceptanceEngine:
+`apps/api/app/evolution/acceptance.py:AcceptanceEngine`
+
+Canonical TraceEvent:
+`apps/api/app/tracing/events.py:TraceEvent`
+
+Canonical Provenance:
+`apps/api/app/provenance/hasher.py:verify_event_chain`
+
+## Fixed in S1
+- Extracted LLM provider instantiation logic from `apps/api/app/services/experiment_service.py` into canonical provider factory `apps/api/app/providers/factory.py:get_llm_provider()`, eliminating application-service to provider-implementation coupling.
+- Centralized all sponsor environment variables and provider keys (`aigrants`, `smallest`, `explabs`, `tensormux`, `forge_llm_provider`, `forge_test_mode`) into canonical `apps/api/app/core/config.py:Settings`.
+- Added contract tests in `apps/api/tests/test_architecture_contracts.py` (7 tests) verifying that all registered tools satisfy `Tool`, all providers conform to `LLMProvider`, benchmarks return structured `TaskEvaluation`, `AgentSpec` validation rejects invalid configurations, `AcceptanceEngine` operates deterministically, and cryptographic provenance detects payload tampering.
+- Total test suite expanded from 18 to 25 passing tests (100% pass rate in 1.34s).
+
+## Deliberately Not Changed
+- SQLite Database Models: `apps/api/app/models/entities.py` (Schemas for Experiment, Generation, Execution, TraceEvent, Mutation, ToolMemory are stable and locked).
+- AgentRuntime ReAct Loop: `apps/api/app/agents/runtime.py` (Core multi-turn loop and reflection dispatch verified and preserved).
+- Tool Security Boundary: `apps/api/app/tools/base.py:sanitize_path` (Workspace confinement logic locked).
+- Pareto Acceptance Scoring: `apps/api/app/evolution/acceptance.py` (Multi-objective optimization logic locked).
+- Cryptographic Provenance Chaining: `apps/api/app/provenance/hasher.py` (RFC 8785 JSON canonicalization and SHA-256 event chaining locked).
+- Frontend UI Layouts & Components: `apps/web/` (Next.js components and Tailwind design systems frozen).
+
+## Remaining Architecture Risks
+1. Simulated Dual-Pass in `POST /api/experiments/{id}/learning-run`: `ExperimentService.run_learning_loop` still returns hardcoded Cold vs Warm metrics rather than executing two live sequential ReAct passes with live delta calculations.
+2. External CLI Dependency on AO: Maximor AO (`ao`) remains an optional bridge that checks local CLI presence; if absent, it returns `available: false` without halting core operations.
+3. Experiential Labs Provider Live Validation: `apps/api/app/providers/experiential.py` conforms to `LLMProvider` but requires an active `EXPLABS_API_KEY` for live network verification.

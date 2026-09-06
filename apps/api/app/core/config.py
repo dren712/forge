@@ -18,6 +18,21 @@ class Settings(BaseModel):
 
     database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite+aiosqlite:///forge.db"))
     forge_env: str = Field(default_factory=lambda: os.getenv("FORGE_ENV", "development"))
+    forge_test_mode: str = Field(default_factory=lambda: os.getenv("FORGE_TEST_MODE", "0"))
+    forge_llm_provider: str = Field(default_factory=lambda: os.getenv("FORGE_LLM_PROVIDER", "tensormux"))
+
+    # Sponsor Provider Configs
+    aigrants_api_key: str = Field(default_factory=lambda: os.getenv("AIGRANTS_API_KEY") or os.getenv("OPENAI_API_KEY", ""))
+    aigrants_base_url: str = Field(default_factory=lambda: os.getenv("AIGRANTS_BASE_URL", "https://api.openai.com/v1"))
+    aigrants_model: str = Field(default_factory=lambda: os.getenv("AIGRANTS_MODEL", "gpt-5-nano"))
+
+    smallest_api_key: str = Field(default_factory=lambda: os.getenv("SMALLEST_API_KEY", ""))
+    smallest_base_url: str = Field(default_factory=lambda: os.getenv("SMALLEST_BASE_URL", "https://waves-api.smallest.ai/api/v1/lightning-v3.1/get_speech"))
+    smallest_voice_id: str = Field(default_factory=lambda: os.getenv("SMALLEST_VOICE_ID", "emily"))
+
+    explabs_api_key: str = Field(default_factory=lambda: os.getenv("EXPLABS_API_KEY", ""))
+    explabs_base_url: str = Field(default_factory=lambda: os.getenv("EXPLABS_BASE_URL", "https://api.experientiallabs.ai/v1"))
+    explabs_model: str = Field(default_factory=lambda: os.getenv("EXPLABS_MODEL", "gpt-6-astra"))
 
     max_agent_steps: int = Field(default_factory=lambda: int(os.getenv("MAX_AGENT_STEPS", "20")))
     max_tool_calls: int = Field(default_factory=lambda: int(os.getenv("MAX_TOOL_CALLS", "30")))
