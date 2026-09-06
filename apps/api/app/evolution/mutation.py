@@ -1,3 +1,4 @@
+import copy
 import uuid
 from enum import Enum
 from typing import Any
@@ -66,6 +67,10 @@ class Mutation(BaseModel):
     reason: str
     observed_failure: str
     expected_effect: str
+
+    def apply(self, spec: AgentSpec) -> AgentSpec:
+        """Applies this mutation to an AgentSpec and returns a new candidate."""
+        return apply_mutation(spec, self)
 
 
 def validate_mutation(
@@ -149,3 +154,124 @@ def validate_mutation(
             raise MutationValidationError(
                 f"Mutation observed_failure '{mutation.observed_failure}' is not grounded in failure cluster report categories: {sorted(report_cats)}"
             )
+
+
+def apply_mutation(spec: AgentSpec, mutation: Mutation) -> AgentSpec:
+    """
+    Applies a validated Mutation to an AgentSpec and returns a new candidate AgentSpec.
+
+    Rules:
+    1. Original AgentSpec must remain unchanged (returns a new instance).
+    2. Candidate must pass AgentSpec validation.
+    3. Mutation target must be supported.
+    4. Before/after state must be represented accurately.
+    5. Pure function: zero database, network, filesystem, or benchmark side effects.
+    """
+    canonical_target = TARGET_ALIASES.get(mutation.target, mutation.target)
+    if canonical_target not in SUPPORTED_MUTATION_TARGETS:
+        raise MutationValidationError(
+            f"Unsupported mutation target '{mutation.target}'. "
+            f"Supported targets are: {sorted(SUPPORTED_MUTATION_TARGETS)}"
+        )
+
+    # Deep copy original spec dictionary to guarantee original spec remains unmodified
+    candidate_dict = copy.deepcopy(spec.model_dump())
+
+    # Verify and apply based on canonical target
+    if canonical_target == "system_prompt":
+        actual_current_prompt = spec.system_prompt
+        mutation_before_prompt = (
+            mutation.before.get("system_prompt")
+            if isinstance(mutation.before, dict)
+            else str(mutation.before)
+        )
+        if mutation_before_prompt != actual_current_prompt:
+            raise MutationValidationError(
+                "Mutation 'before' prompt does not match current AgentSpec system_prompt."
+            )
+        mutation_after_prompt = (
+            mutation.after.get("system_prompt")
+            if isinstance(mutation.after, dict)
+            else str(mutation.after)
+        )
+        if not isinstance(mutation_after_prompt, str) or not mutation_after_prompt.strip():
+            raise MutationValidationError("Candidate system_prompt must be a non-empty string.")
+        candidate_dict["system_prompt"] = mutation_after_prompt
+
+    elif canonical_target == "planner":
+        actual_current = spec.planner.model_dump()
+        if isinstance(mutation.before, dict) and mutation.before != actual_current:
+            raise MutationValidationError(
+                "Mutation 'before' planner state does not match current AgentSpec planner."
+            )
+        if not isinstance(mutation.after, dict):
+            raise MutationValidationError("Planner mutation 'after' must be a dictionary.")
+        candidate_dict["planner"] = mutation.after
+
+    elif canonical_target == "verification_strategy":
+        actual_current = spec.verifier.model_dump()
+        if isinstance(mutation.before, dict) and mutation.before != actual_current:
+            raise MutationValidationError(
+                "Mutation 'before' verifier state does not match current AgentSpec verifier."
+            )
+        if not isinstance(mutation.after, dict):
+            raise MutationValidationError("Verification strategy mutation 'after' must be a dictionary.")
+        candidate_dict["verifier"] = mutation.after
+
+    elif canonical_target == "retry_strategy":
+        actual_current = spec.retry_policy.model_dump()
+        if isinstance(mutation.before, dict) and mutation.before != actual_current:
+            raise MutationValidationError(
+                "Mutation 'before' retry_policy state does not match current AgentSpec retry_policy."
+            )
+        if not isinstance(mutation.after, dict):
+            raise MutationValidationError("Retry strategy mutation 'after' must be a dictionary.")
+        candidate_dict["retry_policy"] = mutation.after
+
+    elif canonical_target == "memory_strategy":
+        actual_current = spec.memory.model_dump()
+        if isinstance(mutation.before, dict) and mutation.before != actual_current:
+            raise MutationValidationError(
+                "Mutation 'before' memory state does not match current AgentSpec memory."
+            )
+        if not isinstance(mutation.after, dict):
+            raise MutationValidationError("Memory strategy mutation 'after' must be a dictionary.")
+        candidate_dict["memory"] = mutation.after
+
+    elif canonical_target == "orchestration_strategy":
+        actual_current = spec.orchestration.model_dump()
+        if isinstance(mutation.before, dict) and mutation.before != actual_current:
+            raise MutationValidationError(
+                "Mutation 'before' orchestration state does not match current AgentSpec orchestration."
+            )
+        if not isinstance(mutation.after, dict):
+            raise MutationValidationError("Orchestration strategy mutation 'after' must be a dictionary.")
+        candidate_dict["orchestration"] = mutation.after
+
+    elif canonical_target == "tool_selection_policy":
+        actual_current = spec.tools
+        mutation_before_tools = (
+            mutation.before.get("tools")
+            if isinstance(mutation.before, dict)
+            else mutation.before
+        )
+        if isinstance(mutation_before_tools, list) and mutation_before_tools != actual_current:
+            raise MutationValidationError(
+                "Mutation 'before' tools do not match current AgentSpec tools."
+            )
+        mutation_after_tools = (
+            mutation.after.get("tools")
+            if isinstance(mutation.after, dict)
+            else mutation.after
+        )
+        if not isinstance(mutation_after_tools, list) or not all(isinstance(t, str) for t in mutation_after_tools):
+            raise MutationValidationError("Tool selection policy 'after' state must be a list of tool names.")
+        candidate_dict["tools"] = mutation_after_tools
+
+    # Construct and validate candidate AgentSpec
+    try:
+        candidate_spec = AgentSpec(**candidate_dict)
+    except Exception as e:
+        raise MutationValidationError(f"Invalid candidate AgentSpec generated by mutation: {e}")
+
+    return candidate_spec
