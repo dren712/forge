@@ -29,7 +29,8 @@ def sign_event(event: TraceEvent, previous_hash: str | None = None) -> TraceEven
     prev = previous_hash if previous_hash is not None else event.previous_event_hash
     event.previous_event_hash = prev
     canonical = canonicalize_payload(event.payload)
-    event.event_hash = compute_event_hash(prev, event.type.value, event.timestamp, canonical)
+    type_str = event.type.value if hasattr(event.type, "value") else str(event.type)
+    event.event_hash = compute_event_hash(prev, type_str, event.timestamp, canonical)
     return event
 
 
@@ -60,9 +61,10 @@ def verify_event_chain(events: list[TraceEvent]) -> Tuple[bool, int | None, str]
                 )
 
         canonical = canonicalize_payload(event.payload)
+        type_str = event.type.value if hasattr(event.type, "value") else str(event.type)
         recalculated_hash = compute_event_hash(
             event.previous_event_hash,
-            event.type.value,
+            type_str,
             event.timestamp,
             canonical,
         )
