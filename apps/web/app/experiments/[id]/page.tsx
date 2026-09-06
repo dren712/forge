@@ -531,7 +531,7 @@ export default function ExperimentDetailPage() {
     };
 
     audio.onerror = () => {
-      alert("Unable to play voice debrief (check SMALLEST_API_KEY or voice service status).");
+      console.warn("Voice debrief unavailable (SMALLEST_API_KEY not configured on server).");
       setLoadingAudioId(null);
       setPlayingGenId(null);
     };
@@ -589,7 +589,7 @@ export default function ExperimentDetailPage() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 4000);
+    const interval = setInterval(loadData, 12000);
     return () => clearInterval(interval);
   }, [id]);
 
@@ -678,17 +678,18 @@ export default function ExperimentDetailPage() {
 
       es.onerror = () => {
         if (!isSubscribed) return;
+        // On Render free tier, SSE will frequently disconnect — gracefully fall back to polling
         if (es?.readyState === EventSource.CLOSED) {
-          setSseStatus("failed");
-          setSseError(`Live event stream disconnected or unreachable at ${API_BASE}/experiments/${id}/stream.`);
+          setSseStatus("disconnected");
+          // Don't set error — polling keeps data fresh
         } else if (es?.readyState === EventSource.CONNECTING) {
           setSseStatus("connecting");
         }
       };
     } catch (e: any) {
       if (isSubscribed) {
-        setSseStatus("failed");
-        setSseError(e?.message || "Failed to initialize EventSource stream.");
+        setSseStatus("disconnected");
+        // SSE is optional — polling is the primary data source
       }
     }
 
@@ -754,14 +755,14 @@ export default function ExperimentDetailPage() {
   const metrics = currentGen?.metrics;
 
   const effectiveStatus: "connecting" | "connected" | "disconnected" | "completed" | "failed" =
-    sseStatus === "failed"
-      ? "failed"
-      : sseStatus === "disconnected"
-      ? "disconnected"
+    (experiment.status === "COMPLETED" || (events.length > 0 && (events[events.length - 1].type === "AGENT_COMPLETED" || events[events.length - 1].type === "EVALUATION_COMPLETED")))
+      ? "completed"
       : sseStatus === "connecting"
       ? "connecting"
-      : (sseStatus === "completed" || experiment.status === "COMPLETED" || (events.length > 0 && (events[events.length - 1].type === "AGENT_COMPLETED" || events[events.length - 1].type === "EVALUATION_COMPLETED")))
-      ? "completed"
+      : sseStatus === "disconnected"
+      ? "connected" // Polling mode — data stays fresh
+      : sseStatus === "connected"
+      ? "connected"
       : "connected";
 
   const filteredEvents = events.filter((ev) => {
@@ -2099,16 +2100,6 @@ export default function ExperimentDetailPage() {
                   <CheckCircle2 className="w-3 h-3" /> Execution Completed
                 </span>
               )}
-              {effectiveStatus === "disconnected" && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/30">
-                  <Radio className="w-3 h-3" /> Disconnected
-                </span>
-              )}
-              {effectiveStatus === "failed" && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                  <AlertTriangle className="w-3 h-3" /> Connection Failed
-                </span>
-              )}
 
               {/* Auto-Scroll Toggle */}
               <button
@@ -2138,28 +2129,7 @@ export default function ExperimentDetailPage() {
             </div>
           </div>
 
-          {/* Truthful Error Banner if SSE is Unavailable */}
-          {(effectiveStatus === "failed" || sseError) && (
-            <div className="mx-4 mt-4 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-start gap-2.5 text-rose-200">
-                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold text-rose-300">Live SSE Stream Unavailable:</span>{" "}
-                  {sseError || "Unable to establish real-time stream connection with backend."}{" "}
-                  Showing persisted database telemetry ({events.length} events loaded). No fake stream is being simulated.
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setSseReconnectCount((c) => c + 1);
-                  loadData();
-                }}
-                className="self-start sm:self-auto px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 font-semibold transition cursor-pointer shrink-0"
-              >
-                Retry Connection
-              </button>
-            </div>
-          )}
+          {/* SSE is optional — data is loaded via polling */}
 
           {/* Filter Toolbar */}
           <div className="px-5 py-2.5 bg-[#0d1117] border-b border-[#21262d] flex flex-wrap items-center justify-between gap-3">
