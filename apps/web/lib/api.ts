@@ -1,4 +1,11 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+let rawBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+if (rawBase.endsWith("/")) {
+  rawBase = rawBase.slice(0, -1);
+}
+if (!rawBase.endsWith("/api")) {
+  rawBase = `${rawBase}/api`;
+}
+export const API_BASE = rawBase;
 
 export interface Experiment {
   id: string;
