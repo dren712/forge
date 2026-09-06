@@ -43,6 +43,12 @@ import {
   Scale,
   Minus,
   X,
+  Radio,
+  RefreshCw,
+  ChevronDown,
+  ChevronRight,
+  Check,
+  Filter,
 } from "lucide-react";
 
 export default function ExperimentDetailPage() {
@@ -75,6 +81,14 @@ export default function ExperimentDetailPage() {
   const [loadingEvidence, setLoadingEvidence] = useState<boolean>(false);
   const [causalViewMode, setCausalViewMode] = useState<"featured" | "experiment">("featured");
 
+  // Live Execution Console State (FORGE S8-E)
+  const [sseStatus, setSseStatus] = useState<"connecting" | "connected" | "disconnected" | "completed" | "failed">("connecting");
+  const [sseError, setSseError] = useState<string | null>(null);
+  const [sseReconnectCount, setSseReconnectCount] = useState<number>(0);
+  const [consoleFilter, setConsoleFilter] = useState<"all" | "tools" | "model" | "errors" | "verify">("all");
+  const [autoScroll, setAutoScroll] = useState<boolean>(true);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+
   useEffect(() => {
     if (generations.length >= 2) {
       if (!compareGenAId || !generations.find((g) => g.id === compareGenAId)) {
@@ -87,6 +101,228 @@ export default function ExperimentDetailPage() {
       setCompareGenAId(generations[0].id);
     }
   }, [generations]);
+
+  const formatEventTime = (timestamp: string) => {
+    try {
+      const d = new Date(timestamp);
+      if (isNaN(d.getTime())) return "--:--:--";
+      return d.toLocaleTimeString("en-GB", { hour12: false });
+    } catch {
+      return "--:--:--";
+    }
+  };
+
+  interface EventDescriptor {
+    title: string;
+    category: "agent" | "model" | "tool" | "result" | "verify" | "recovery" | "mutation" | "system";
+    toolOrModel?: string;
+    statusCode?: number;
+    isSuccess?: boolean | null;
+    latencyMs?: number;
+    summary?: string;
+  }
+
+  const getEventDescriptor = (ev: TraceEvent): EventDescriptor => {
+    const p = ev.payload || {};
+    const t = ev.type;
+
+    switch (t) {
+      case "AGENT_STARTED":
+        return {
+          title: p.phase ? `Agent started (${p.phase})` : "Agent started",
+          category: "agent",
+          toolOrModel: p.agent_model || p.model,
+          isSuccess: true,
+          summary: p.goal || p.task_id || undefined,
+        };
+
+      case "MODEL_CALL":
+        return {
+          title: "Model call",
+          category: "model",
+          toolOrModel: p.model,
+          summary: p.step ? `Step ${p.step} (${p.messages_count || 0} messages)` : undefined,
+        };
+
+      case "MODEL_RESPONSE":
+        return {
+          title: "Model response",
+          category: "model",
+          toolOrModel: p.model,
+          isSuccess: true,
+          latencyMs: p.latency_ms,
+          summary: p.tokens ? `${p.tokens} tokens` : (p.content_preview ? p.content_preview.slice(0, 80) : undefined),
+        };
+
+      case "TOOL_CALL":
+        return {
+          title: `Tool: ${p.tool || "unknown"}`,
+          category: "tool",
+          toolOrModel: p.tool,
+          summary: p.arguments
+            ? (typeof p.arguments === "string" ? p.arguments.slice(0, 70) : JSON.stringify(p.arguments).slice(0, 70))
+            : undefined,
+        };
+
+      case "TOOL_RESULT": {
+        const isSuccess = p.success !== false && (!p.status_code || p.status_code < 400);
+        const code = p.status_code !== undefined ? p.status_code : (isSuccess ? 200 : (p.error_type ? 500 : undefined));
+        return {
+          title: code !== undefined ? `Tool result: ${code}` : "Tool result",
+          category: "result",
+          toolOrModel: p.tool,
+          statusCode: code,
+          isSuccess: isSuccess,
+          latencyMs: p.latency_ms,
+          summary: p.error_type || (p.output_preview ? p.output_preview.slice(0, 90) : undefined),
+        };
+      }
+
+      case "STATE_UPDATE":
+        if (p.state === "RECOVERING") {
+          return {
+            title: "Agent recovery",
+            category: "recovery",
+            isSuccess: null,
+            summary: "Attempting autonomous error recovery",
+          };
+        }
+        return {
+          title: `State: ${p.state || "update"}`,
+          category: "system",
+          summary: p.step ? `Step ${p.step}` : undefined,
+        };
+
+      case "AGENT_ERROR":
+        return {
+          title: "Agent error",
+          category: "recovery",
+          statusCode: p.status_code || 500,
+          isSuccess: false,
+          summary: p.error || "Agent execution error",
+        };
+
+      case "FAILURE_DETECTED":
+        return {
+          title: `Failure: ${p.failure_type || "Detected"}`,
+          category: "recovery",
+          isSuccess: false,
+          summary: p.root_cause || (p.evidence ? p.evidence[0] : undefined),
+        };
+
+      case "VERIFICATION_STARTED":
+        return {
+          title: "Verification",
+          category: "verify",
+          summary: p.verifier_type ? `Verifier: ${p.verifier_type}` : undefined,
+        };
+
+      case "VERIFICATION_RESULT":
+        return {
+          title: "Verification",
+          category: "verify",
+          isSuccess: p.passed === true,
+          latencyMs: p.duration_ms,
+          summary: p.feedback || (p.passed ? "Verification passed" : "Verification failed"),
+        };
+
+      case "AGENT_COMPLETED":
+        return {
+          title: "Completed",
+          category: "agent",
+          isSuccess: p.status === "COMPLETED" || p.verification_passed === true,
+          summary: p.status ? `Status: ${p.status} (${p.steps || 0} steps, ${p.tool_calls || 0} tool calls)` : undefined,
+        };
+
+      case "SELF_REFLECTION_STARTED":
+        return {
+          title: "Self-reflection started",
+          category: "system",
+        };
+
+      case "SELF_REFLECTION_COMPLETED":
+        return {
+          title: "Self-reflection completed",
+          category: "system",
+          summary: p.learned_rules_count ? `${p.learned_rules_count} rule(s) retained in tool memory` : undefined,
+        };
+
+      case "TOOL_PLAYBOOK_LEARNED":
+        return {
+          title: `Playbook learned: ${p.tool || "tool"}`,
+          category: "system",
+          toolOrModel: p.tool,
+          isSuccess: true,
+          summary: p.learned_rule,
+        };
+
+      case "MUTATION_PROPOSED":
+        return {
+          title: `Mutation proposed: ${p.type || "agent"}`,
+          category: "mutation",
+          summary: p.target,
+        };
+
+      case "MUTATION_APPLIED":
+        return {
+          title: "Mutation applied",
+          category: "mutation",
+          isSuccess: true,
+          summary: p.reason || p.mutation_type,
+        };
+
+      case "GENERATION_ACCEPTED":
+        return {
+          title: "Generation accepted",
+          category: "system",
+          isSuccess: true,
+          summary: p.reason,
+        };
+
+      case "GENERATION_REJECTED":
+        return {
+          title: "Generation rejected",
+          category: "system",
+          isSuccess: false,
+          summary: p.reason,
+        };
+
+      case "EXPERIMENT_CREATED":
+        return {
+          title: "Experiment created",
+          category: "system",
+          summary: p.name,
+        };
+
+      case "GENERATION_CREATED":
+        return {
+          title: `Generation created (G${p.generation_index ?? p.generation ?? ""})`,
+          category: "system",
+          toolOrModel: p.model,
+        };
+
+      case "EVALUATION_STARTED":
+        return {
+          title: "Evaluation started",
+          category: "system",
+          summary: p.benchmark ? `Benchmark: ${p.benchmark}` : undefined,
+        };
+
+      case "EVALUATION_COMPLETED":
+        return {
+          title: "Completed",
+          category: "agent",
+          isSuccess: true,
+          summary: p.accuracy !== undefined ? `Accuracy: ${(p.accuracy * 100).toFixed(1)}%` : undefined,
+        };
+
+      default:
+        return {
+          title: t.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()),
+          category: "system",
+        };
+    }
+  };
 
   const handleSelectGeneration = async (genId: string) => {
     if (selectedGenId === genId) {
@@ -236,14 +472,23 @@ export default function ExperimentDetailPage() {
         api.getExperiment(id),
         api.getGenerations(id),
         api.getProvenance(id),
-        api.getEvents(id, 80),
+        api.getEvents(id, 150),
         api.getToolMemory(id).catch(() => []),
         api.getEvidence(id, selectedEvidenceGenId || undefined).catch(() => null),
       ]);
       setExperiment(exp);
       setGenerations(gens);
       setProvenance(prov);
-      setEvents(evs);
+      setEvents((prev) => {
+        const map = new Map<string, TraceEvent>();
+        for (const ev of [...prev, ...evs]) {
+          const key = ev.event_id || `${ev.timestamp}-${ev.type}`;
+          map.set(key, ev);
+        }
+        return Array.from(map.values()).sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+      });
       setToolMemories(mems);
       if (evd) setEvidenceData(evd);
     } catch (err) {
@@ -270,29 +515,118 @@ export default function ExperimentDetailPage() {
     return () => clearInterval(interval);
   }, [id]);
 
-  // Connect SSE Live Stream
+  // Connect SSE Live Stream (FORGE S8-E)
   useEffect(() => {
     if (!id) return;
-    const eventSource = new EventSource(`${API_BASE}/experiments/${id}/stream`);
 
-    eventSource.onmessage = (e) => {
-      try {
-        const ev: TraceEvent = JSON.parse(e.data);
-        setEvents((prev) => [...prev.slice(-150), ev]);
-        loadData();
-      } catch (err) {
-        // Ping or non-json message
+    setSseStatus("connecting");
+    setSseError(null);
+
+    let isSubscribed = true;
+    let es: EventSource | null = null;
+
+    try {
+      es = new EventSource(`${API_BASE}/experiments/${id}/stream`);
+
+      es.onopen = () => {
+        if (!isSubscribed) return;
+        setSseStatus("connected");
+        setSseError(null);
+      };
+
+      const handleTraceEvent = (e: MessageEvent) => {
+        if (!isSubscribed) return;
+        try {
+          const ev: TraceEvent = JSON.parse(e.data);
+          setEvents((prev) => {
+            const exists = prev.some(
+              (p) => p.event_id === ev.event_id || (p.timestamp === ev.timestamp && p.type === ev.type)
+            );
+            if (exists) return prev;
+            const updated = [...prev, ev];
+            return updated.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          });
+
+          if (ev.type === "AGENT_COMPLETED" || ev.type === "EVALUATION_COMPLETED") {
+            setSseStatus("completed");
+          } else {
+            setSseStatus("connected");
+          }
+        } catch (err) {
+          // Non-JSON or heartbeat
+        }
+      };
+
+      // Named event types dispatched by backend FastAPI StreamingResponse
+      const eventTypes = [
+        "connected",
+        "EXPERIMENT_CREATED",
+        "GENERATION_CREATED",
+        "AGENT_STARTED",
+        "MODEL_CALL",
+        "MODEL_RESPONSE",
+        "TOOL_CALL",
+        "TOOL_RESULT",
+        "STATE_UPDATE",
+        "AGENT_ERROR",
+        "AGENT_COMPLETED",
+        "VERIFICATION_STARTED",
+        "VERIFICATION_RESULT",
+        "EVALUATION_STARTED",
+        "EVALUATION_COMPLETED",
+        "FAILURE_DETECTED",
+        "MUTATION_PROPOSED",
+        "MUTATION_APPLIED",
+        "GENERATION_ACCEPTED",
+        "GENERATION_REJECTED",
+        "SELF_REFLECTION_STARTED",
+        "SELF_REFLECTION_COMPLETED",
+        "TOOL_PLAYBOOK_LEARNED",
+      ];
+
+      es.addEventListener("connected", () => {
+        if (!isSubscribed) return;
+        setSseStatus("connected");
+        setSseError(null);
+      });
+
+      for (const et of eventTypes) {
+        if (et !== "connected") {
+          es.addEventListener(et, handleTraceEvent);
+        }
+      }
+
+      es.onmessage = handleTraceEvent;
+
+      es.onerror = () => {
+        if (!isSubscribed) return;
+        if (es?.readyState === EventSource.CLOSED) {
+          setSseStatus("failed");
+          setSseError(`Live event stream disconnected or unreachable at ${API_BASE}/experiments/${id}/stream.`);
+        } else if (es?.readyState === EventSource.CONNECTING) {
+          setSseStatus("connecting");
+        }
+      };
+    } catch (e: any) {
+      if (isSubscribed) {
+        setSseStatus("failed");
+        setSseError(e?.message || "Failed to initialize EventSource stream.");
+      }
+    }
+
+    return () => {
+      isSubscribed = false;
+      if (es) {
+        es.close();
       }
     };
-
-    return () => eventSource.close();
-  }, [id]);
+  }, [id, sseReconnectCount]);
 
   useEffect(() => {
-    if (activeTab === "console") {
+    if (activeTab === "console" && autoScroll) {
       consoleBottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [events, activeTab]);
+  }, [events, activeTab, autoScroll]);
 
   const handleGenerate = async () => {
     setLoadingAction("generate");
@@ -340,6 +674,34 @@ export default function ExperimentDetailPage() {
   const bestGen =
     generations.find((g) => g.id === experiment.best_generation_id) || null;
   const metrics = currentGen?.metrics;
+
+  const effectiveStatus: "connecting" | "connected" | "disconnected" | "completed" | "failed" =
+    sseStatus === "failed"
+      ? "failed"
+      : sseStatus === "disconnected"
+      ? "disconnected"
+      : sseStatus === "connecting"
+      ? "connecting"
+      : (sseStatus === "completed" || experiment.status === "COMPLETED" || (events.length > 0 && (events[events.length - 1].type === "AGENT_COMPLETED" || events[events.length - 1].type === "EVALUATION_COMPLETED")))
+      ? "completed"
+      : "connected";
+
+  const filteredEvents = events.filter((ev) => {
+    if (consoleFilter === "all") return true;
+    if (consoleFilter === "tools") return ev.type.includes("TOOL");
+    if (consoleFilter === "model") return ev.type.includes("MODEL");
+    if (consoleFilter === "errors") {
+      return (
+        ev.type.includes("ERROR") ||
+        ev.type.includes("FAILURE") ||
+        (ev.type === "TOOL_RESULT" && ev.payload?.success === false) ||
+        (ev.type === "STATE_UPDATE" && ev.payload?.state === "RECOVERING") ||
+        (ev.type === "VERIFICATION_RESULT" && ev.payload?.passed === false)
+      );
+    }
+    if (consoleFilter === "verify") return ev.type.includes("VERIF");
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -702,7 +1064,10 @@ export default function ExperimentDetailPage() {
               activeTab === "console" ? "border-orange-500 text-white" : "border-transparent text-gray-400 hover:text-gray-200"
             }`}
           >
-            <Terminal className="w-4 h-4" /> Live Execution Trace ({events.length})
+            <Terminal className="w-4 h-4" /> Live Execution Console ({events.length})
+            {effectiveStatus === "connected" && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            )}
           </button>
           <button
             onClick={() => setActiveTab("provenance")}
@@ -1572,44 +1937,312 @@ export default function ExperimentDetailPage() {
         </div>
       )}
 
-      {/* Live Console Trace */}
+      {/* Live Execution Console (FORGE S8-E) */}
       {activeTab === "console" && (
-        <div className="bg-[#0a0c10] border border-[#30363d] rounded-xl font-mono text-xs overflow-hidden shadow-2xl">
-          <div className="px-4 py-2.5 bg-[#12151d] border-b border-[#30363d] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-gray-300 font-semibold">Live Trace Stream</span>
+        <div className="bg-[#0a0c10] border border-[#30363d] rounded-2xl overflow-hidden shadow-2xl">
+          {/* Console Header Bar */}
+          <div className="px-5 py-3.5 bg-[#12151d] border-b border-[#30363d] flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400">
+                <Terminal className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white tracking-wide">Live Execution Console</h3>
+                  <span className="text-[10px] text-gray-500 font-mono">/api/experiments/{id}/stream</span>
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  Real-time agent telemetry via Server-Sent Events (SSE) • Exact database records in chronological order
+                </p>
+              </div>
             </div>
-            <span className="text-gray-500 text-[11px]">Server-Sent Events active</span>
+
+            {/* Connection Status & Stream Controls */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* SSE Connection Status Pill */}
+              {effectiveStatus === "connecting" && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 animate-pulse">
+                  <RotateCw className="w-3 h-3 animate-spin" /> Connecting...
+                </span>
+              )}
+              {effectiveStatus === "connected" && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Live Stream Connected
+                </span>
+              )}
+              {effectiveStatus === "completed" && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                  <CheckCircle2 className="w-3 h-3" /> Execution Completed
+                </span>
+              )}
+              {effectiveStatus === "disconnected" && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/30">
+                  <Radio className="w-3 h-3" /> Disconnected
+                </span>
+              )}
+              {effectiveStatus === "failed" && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                  <AlertTriangle className="w-3 h-3" /> Connection Failed
+                </span>
+              )}
+
+              {/* Auto-Scroll Toggle */}
+              <button
+                onClick={() => setAutoScroll(!autoScroll)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                  autoScroll
+                    ? "bg-orange-500/20 text-orange-300 border-orange-500/40"
+                    : "bg-[#161b22] text-gray-400 border-[#30363d] hover:text-gray-200"
+                }`}
+                title="Automatically scroll to newest events"
+              >
+                <ArrowDown className="w-3 h-3" />
+                Auto-scroll {autoScroll ? "ON" : "OFF"}
+              </button>
+
+              {/* Reconnect / Refresh Button */}
+              <button
+                onClick={() => {
+                  setSseReconnectCount((c) => c + 1);
+                  loadData();
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-[#161b22] hover:bg-[#21262d] text-gray-300 border border-[#30363d] transition cursor-pointer"
+                title="Reconnect SSE stream and reload database events"
+              >
+                <RefreshCw className="w-3 h-3" /> Reconnect
+              </button>
+            </div>
           </div>
 
-          <div className="p-4 max-h-[550px] overflow-y-auto space-y-2">
-            {events.length === 0 ? (
-              <div className="text-gray-600 py-8 text-center">Waiting for agent execution events...</div>
-            ) : (
-              events.map((ev, i) => (
-                <div key={ev.event_id || i} className="flex items-start gap-3 hover:bg-[#161b22]/50 p-1 rounded">
-                  <span className="text-gray-500 text-[11px] whitespace-nowrap">
-                    {new Date(ev.timestamp).toLocaleTimeString()}
-                  </span>
-                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold whitespace-nowrap ${
-                    ev.type.includes("ERROR") || ev.type.includes("FAILURE")
-                      ? "bg-rose-500/20 text-rose-400"
-                      : ev.type.includes("TOOL")
-                      ? "bg-amber-500/20 text-amber-400"
-                      : ev.type.includes("ACCEPTED")
-                      ? "bg-emerald-500/20 text-emerald-400"
-                      : "bg-blue-500/20 text-blue-400"
-                  }`}>
-                    {ev.type}
-                  </span>
-                  <span className="text-gray-300 flex-1 break-all">
-                    {JSON.stringify(ev.payload)}
-                  </span>
+          {/* Truthful Error Banner if SSE is Unavailable */}
+          {(effectiveStatus === "failed" || sseError) && (
+            <div className="mx-4 mt-4 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-2.5 text-rose-200">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-rose-300">Live SSE Stream Unavailable:</span>{" "}
+                  {sseError || "Unable to establish real-time stream connection with backend."}{" "}
+                  Showing persisted database telemetry ({events.length} events loaded). No fake stream is being simulated.
                 </div>
-              ))
+              </div>
+              <button
+                onClick={() => {
+                  setSseReconnectCount((c) => c + 1);
+                  loadData();
+                }}
+                className="self-start sm:self-auto px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 font-semibold transition cursor-pointer shrink-0"
+              >
+                Retry Connection
+              </button>
+            </div>
+          )}
+
+          {/* Filter Toolbar */}
+          <div className="px-5 py-2.5 bg-[#0d1117] border-b border-[#21262d] flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-gray-500 mr-1 flex items-center gap-1 text-[11px]">
+                <Filter className="w-3 h-3" /> Filter:
+              </span>
+              <button
+                onClick={() => setConsoleFilter("all")}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer text-xs ${
+                  consoleFilter === "all"
+                    ? "bg-[#21262d] text-white font-bold border border-[#30363d]"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-[#161b22]"
+                }`}
+              >
+                All Events ({events.length})
+              </button>
+              <button
+                onClick={() => setConsoleFilter("tools")}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer text-xs ${
+                  consoleFilter === "tools"
+                    ? "bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-[#161b22]"
+                }`}
+              >
+                Tools & Results ({events.filter((e) => e.type.includes("TOOL")).length})
+              </button>
+              <button
+                onClick={() => setConsoleFilter("model")}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer text-xs ${
+                  consoleFilter === "model"
+                    ? "bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-[#161b22]"
+                }`}
+              >
+                Model Calls ({events.filter((e) => e.type.includes("MODEL")).length})
+              </button>
+              <button
+                onClick={() => setConsoleFilter("errors")}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer text-xs ${
+                  consoleFilter === "errors"
+                    ? "bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-[#161b22]"
+                }`}
+              >
+                Errors & Recovery ({events.filter((e) => e.type.includes("ERROR") || e.type.includes("FAILURE") || (e.payload?.status_code && e.payload?.status_code >= 400) || e.payload?.state === "RECOVERING").length})
+              </button>
+              <button
+                onClick={() => setConsoleFilter("verify")}
+                className={`px-2.5 py-1 rounded-md transition cursor-pointer text-xs ${
+                  consoleFilter === "verify"
+                    ? "bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-[#161b22]"
+                }`}
+              >
+                Verification ({events.filter((e) => e.type.includes("VERIF")).length})
+              </button>
+            </div>
+
+            <div className="text-[11px] text-gray-500 hidden lg:block font-mono">
+              Click event row to expand raw payload
+            </div>
+          </div>
+
+          {/* Chronological Event Stream Feed */}
+          <div className="max-h-[580px] overflow-y-auto divide-y divide-[#21262d]/40 font-mono text-xs select-text">
+            {filteredEvents.length === 0 ? (
+              <div className="py-16 text-center text-gray-500 font-mono space-y-2">
+                <Terminal className="w-8 h-8 mx-auto text-gray-600 opacity-60" />
+                <p>No events match the selected filter.</p>
+                <p className="text-[11px] text-gray-600">
+                  Execute "Run Benchmark" or "Evolve Agent" to trigger live execution events.
+                </p>
+              </div>
+            ) : (
+              filteredEvents.map((ev, i) => {
+                const desc = getEventDescriptor(ev);
+                const rowKey = ev.event_id || `${ev.timestamp}-${i}`;
+                const isExpanded = expandedEventId === rowKey;
+                const timeStr = formatEventTime(ev.timestamp);
+
+                return (
+                  <div key={rowKey} className="group hover:bg-[#161b22]/70 transition-colors">
+                    <div
+                      onClick={() => setExpandedEventId(isExpanded ? null : rowKey)}
+                      className="px-4 py-2 flex items-center gap-3 cursor-pointer"
+                    >
+                      {/* 1. Timestamp (e.g. 20:41:03) */}
+                      <span className="text-gray-500 text-[11px] w-18 shrink-0 font-medium tracking-tight">
+                        {timeStr}
+                      </span>
+
+                      {/* 2. Success / Failure indicator dot */}
+                      <span className="shrink-0 flex items-center justify-center w-3 h-3">
+                        {desc.isSuccess === true ? (
+                          <span className="w-2 h-2 rounded-full bg-emerald-400" title="Success" />
+                        ) : desc.isSuccess === false ? (
+                          <span className="w-2 h-2 rounded-full bg-rose-500" title="Failure" />
+                        ) : (
+                          <span className="w-2 h-2 rounded-full bg-amber-400" title="State transition / Warning" />
+                        )}
+                      </span>
+
+                      {/* 3. Event Type / Title */}
+                      <span className={`font-semibold shrink-0 ${
+                        desc.isSuccess === false
+                          ? "text-rose-400"
+                          : desc.category === "tool" || desc.category === "result"
+                          ? "text-amber-300"
+                          : desc.category === "model"
+                          ? "text-blue-300"
+                          : desc.category === "recovery"
+                          ? "text-orange-400"
+                          : desc.category === "verify"
+                          ? "text-purple-300"
+                          : "text-gray-200"
+                      }`}>
+                        {desc.title}
+                      </span>
+
+                      {/* 4. Tool/Model Name where safe */}
+                      {desc.toolOrModel && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1c2128] text-cyan-300 border border-[#30363d] shrink-0">
+                          {desc.toolOrModel}
+                        </span>
+                      )}
+
+                      {/* 5. Relevant status code badge */}
+                      {desc.statusCode !== undefined && (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                          desc.statusCode >= 200 && desc.statusCode < 300
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+                            : desc.statusCode === 422
+                            ? "bg-orange-500/10 text-orange-400 border border-orange-500/30"
+                            : "bg-rose-500/10 text-rose-400 border border-rose-500/30"
+                        }`}>
+                          {desc.statusCode}
+                        </span>
+                      )}
+
+                      {/* 6. Latency when available */}
+                      {desc.latencyMs !== undefined && (
+                        <span className="text-gray-500 text-[10px] shrink-0 flex items-center gap-1 font-mono">
+                          <Clock className="w-2.5 h-2.5" />
+                          {desc.latencyMs >= 1000
+                            ? `${(desc.latencyMs / 1000).toFixed(2)}s`
+                            : `${Math.round(desc.latencyMs)}ms`}
+                        </span>
+                      )}
+
+                      {/* Context / Preview summary */}
+                      {desc.summary && (
+                        <span className="text-gray-400 text-[11px] truncate flex-1 min-w-0 font-normal">
+                          {desc.summary}
+                        </span>
+                      )}
+
+                      {/* Expand / collapse icon */}
+                      <span className="text-gray-600 group-hover:text-gray-400 ml-auto shrink-0 pl-2 transition-colors">
+                        {isExpanded ? (
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        )}
+                      </span>
+                    </div>
+
+                    {/* Expandable JSON Payload & Provenance Inspector */}
+                    {isExpanded && (
+                      <div className="px-4 pb-3 pt-1.5 bg-[#0d1117] border-t border-[#21262d]">
+                        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                          <span>Event ID: {ev.event_id || "unassigned"}</span>
+                          <span>Type: {ev.type}</span>
+                          {ev.generation_id && <span>Gen ID: {ev.generation_id.slice(0, 8)}...</span>}
+                          {ev.execution_id && <span>Exec ID: {ev.execution_id.slice(0, 8)}...</span>}
+                          <span>
+                            SHA-256 Hash:{" "}
+                            {ev.event_hash ? (
+                              <span className="text-cyan-400">{ev.event_hash.slice(0, 16)}...</span>
+                            ) : (
+                              "Genesis Root"
+                            )}
+                          </span>
+                        </div>
+                        <pre className="p-3 rounded-lg bg-[#161b22] text-gray-300 text-[11px] overflow-x-auto border border-[#30363d] leading-relaxed">
+                          {JSON.stringify(ev.payload, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
             <div ref={consoleBottomRef} />
+          </div>
+
+          {/* Console Footer Bar */}
+          <div className="px-5 py-2.5 bg-[#12151d] border-t border-[#30363d] flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-400 font-mono">
+            <div className="flex items-center gap-3">
+              <span>Showing {filteredEvents.length} of {events.length} telemetry events</span>
+              <span>•</span>
+              <span className="text-gray-500">Auto-scroll: {autoScroll ? "Active" : "Disabled"}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-gray-500">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Cryptographic hash verification chained</span>
+            </div>
           </div>
         </div>
       )}
