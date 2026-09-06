@@ -14,9 +14,11 @@
 **Hackathon Track:** Syndicate by Maximor — **Track 1: Automated Agent Engineering**  
 **Author:** `dren712`  
 **Repository:** [https://github.com/dren712/forge](https://github.com/dren712/forge)  
-**Live API (Render):** [https://forge-api-amow.onrender.com](https://forge-api-amow.onrender.com/api/health)  
-**Interactive Swagger Docs:** [https://forge-api-amow.onrender.com/docs](https://forge-api-amow.onrender.com/docs)  
-**Live Frontend (Vercel):** [https://forge-a5oj1mt3c-darshan-712.vercel.app](https://forge-a5oj1mt3c-darshan-712.vercel.app)  
+**Live Frontend (Vercel):** [https://forge-agentd.vercel.app/](https://forge-agentd.vercel.app/)  
+**Live API Status (Render):** [https://forge-api-amow.onrender.com/](https://forge-api-amow.onrender.com/)  
+**API Health Check:** [https://forge-api-amow.onrender.com/api/health](https://forge-api-amow.onrender.com/api/health)  
+**Interactive API Docs (Swagger):** [https://forge-api-amow.onrender.com/docs](https://forge-api-amow.onrender.com/docs)  
+**Live Experiments API:** [https://forge-api-amow.onrender.com/api/experiments](https://forge-api-amow.onrender.com/api/experiments)  
 
 ---
 

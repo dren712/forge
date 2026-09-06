@@ -30,6 +30,24 @@ app.add_middleware(
 app.include_router(router)
 
 
+@app.get("/")
+async def root():
+    return {
+        "status": "ok",
+        "product": "FORGE",
+        "tagline": "Agents don't just run. They evolve.",
+        "docs_url": "/docs",
+        "health_url": "/api/health",
+        "experiments_url": "/api/experiments",
+    }
+
+
+@app.get("/health")
+async def root_health():
+    return {"status": "ok", "product": "FORGE", "tagline": "Agents don't just run. They evolve."}
+
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
