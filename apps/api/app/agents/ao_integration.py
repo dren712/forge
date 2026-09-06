@@ -46,7 +46,7 @@ class AOOrchestratorBridge:
             return {
                 "available": False,
                 "installed": False,
-                "error": "ao binary not found in PATH or /opt/homebrew/bin/ao",
+                "error": "AO binary not found on this environment (Render/Linux). This is expected on the production demo, as Agent Orchestrator is a local macOS development harness used to build FORGE, not a runtime dependency.",
             }
 
         try:
@@ -79,7 +79,7 @@ class AOOrchestratorBridge:
     async def get_status(self) -> dict[str, Any]:
         """Executes 'ao status' to query daemon status."""
         if not self.is_available():
-            return {"running": False, "error": "ao binary not found"}
+            return {"running": False, "error": "AO binary not found (expected on production demo)"}
 
         try:
             env = dict(os.environ)
