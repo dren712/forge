@@ -1,9 +1,9 @@
 import asyncio
 import copy
 import uuid
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Callable
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 
 from app.core.config import settings
 from app.models.entities import (
@@ -565,6 +565,24 @@ class ExperimentService:
                 metrics=tm.model_dump(),
             ))
 
+        # Emit acceptance decision event to recorder
+        decision_event = EventType.GENERATION_ACCEPTED if decision.accepted else EventType.GENERATION_REJECTED
+        await recorder.emit(
+            decision_event,
+            {
+                "candidate_generation_id": cand_gen_id,
+                "candidate_generation_number": parent_gen.generation_number + 1,
+                "status": decision.status,
+                "reason": decision.reason,
+                "accuracy_delta": decision.accuracy_delta,
+                "reliability_delta": decision.reliability_delta,
+                "cost_delta_percent": decision.cost_delta_percent,
+                "latency_delta_percent": decision.latency_delta_percent,
+                "dominance_result": decision.dominance_result.value if hasattr(decision.dominance_result, 'value') else str(decision.dominance_result),
+            },
+            generation_id=cand_gen_id,
+        )
+
         # Save all new events
         for ev in recorder.get_events():
             exists = (await db.execute(select(TraceEventModel).where(TraceEventModel.id == ev.event_id))).scalar_one_or_none()
@@ -593,6 +611,113 @@ class ExperimentService:
         await db.commit()
         await db.refresh(candidate_gen)
         return candidate_gen
+
+    @staticmethod
+    async def run_evolution_loop(
+        db: AsyncSession,
+        experiment_id: str,
+        max_generations: int = 5,
+        max_consecutive_rejections: int = 3,
+        task_limit: int | None = None,
+        target_accuracy: float | None = None,
+        stop_condition: Callable[[GenerationModel], bool] | None = None,
+    ) -> list[GenerationModel]:
+        """
+        FORGE S6-J Multi-Generation Evolution Loop:
+        Extends the single-generation evolution cycle to multiple generations:
+        G0 -> G1 -> G2 -> G3 -> ...
+
+        Maximum generations is configurable via `max_generations`.
+
+        For every generation:
+        1. Benchmark current candidate (if not yet benchmarked)
+        2. Aggregate metrics
+        3. Cluster failures
+        4. Generate mutation
+        5. Construct candidate
+        6. Benchmark candidate
+        7. Compare candidate against parent (Pareto acceptance gate)
+        8. Accept or reject
+        9. Persist decision
+        10. Continue from the accepted generation:
+            - If rejected: current = parent
+            - If accepted: current = candidate
+
+        Rejected branches remain persisted (never deleted).
+        Does NOT assume every generation improves.
+
+        Termination conditions:
+        * max generations reached
+        * no valid mutation can be generated
+        * repeated failures prevent progress (consecutive_rejections >= max_consecutive_rejections)
+        * configured stopping condition occurs (target_accuracy or custom stop_condition)
+        """
+        exp_stmt = select(ExperimentModel).where(ExperimentModel.id == experiment_id)
+        exp = (await db.execute(exp_stmt)).scalar_one_or_none()
+        if not exp:
+            raise ValueError(f"Experiment {experiment_id} not found")
+
+        # 1. Ensure initial generation (G0) exists and is benchmarked
+        if not exp.current_generation_id:
+            g0 = await ExperimentService.generate_initial_agent(db, exp.id)
+            g0 = await ExperimentService.run_generation_benchmark(db, exp.id, g0.id, task_limit=task_limit)
+            current_gen = g0
+        else:
+            current_stmt = select(GenerationModel).where(GenerationModel.id == exp.current_generation_id)
+            current_gen = (await db.execute(current_stmt)).scalar_one_or_none()
+            if not current_gen:
+                raise ValueError(f"Current generation {exp.current_generation_id} not found")
+            if not current_gen.metrics:
+                current_gen = await ExperimentService.run_generation_benchmark(db, exp.id, current_gen.id, task_limit=task_limit)
+
+        # Count existing generations in the experiment
+        count_stmt = select(func.count(GenerationModel.id)).where(GenerationModel.experiment_id == exp.id)
+        total_generations = (await db.execute(count_stmt)).scalar() or 1
+
+        consecutive_rejections = 0
+        evolved_generations: list[GenerationModel] = []
+
+        # Check initial stopping conditions on baseline
+        if target_accuracy is not None and current_gen.metrics and current_gen.metrics.get("accuracy", 0.0) >= target_accuracy:
+            return evolved_generations
+        if stop_condition and stop_condition(current_gen):
+            return evolved_generations
+
+        while total_generations < max_generations:
+            try:
+                candidate_gen = await ExperimentService.evaluate_candidate(
+                    db=db,
+                    experiment_id=exp.id,
+                    generation_id=current_gen.id,
+                    task_limit=task_limit,
+                )
+            except Exception:
+                # Terminate when no valid mutation can be generated or evaluation halts
+                break
+
+            evolved_generations.append(candidate_gen)
+            total_generations += 1
+
+            if candidate_gen.status == "ACCEPTED":
+                # Continue from the accepted generation
+                current_gen = candidate_gen
+                consecutive_rejections = 0
+
+                # Check stopping conditions on newly accepted generation
+                if target_accuracy is not None and candidate_gen.metrics and candidate_gen.metrics.get("accuracy", 0.0) >= target_accuracy:
+                    break
+                if stop_condition and stop_condition(candidate_gen):
+                    break
+            else:
+                # If rejected: current remains parent!
+                # current_gen is untouched
+                consecutive_rejections += 1
+                if consecutive_rejections >= max_consecutive_rejections:
+                    # Repeated failures prevent progress
+                    break
+
+        return evolved_generations
+
 
     @staticmethod
     async def get_tool_memories(db: AsyncSession, experiment_id: str) -> list[dict[str, Any]]:

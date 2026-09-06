@@ -257,3 +257,78 @@ class EvolutionEngine:
         )
 
         return candidate_spec, mutation, candidate_metrics, decision
+
+    async def run_evolution_loop(
+        self,
+        initial_spec: AgentSpec,
+        max_generations: int = 5,
+        max_consecutive_rejections: int = 3,
+        task_subset: list[BenchmarkTask] | None = None,
+        target_accuracy: float | None = None,
+        stop_condition: Callable[[GenerationMetrics], bool] | None = None,
+    ) -> list[tuple[AgentSpec, GenerationMetrics, AcceptanceDecision | None]]:
+        """
+        FORGE S6-J Multi-Generation Evolution in Engine:
+        Runs G0 -> G1 -> G2 -> ...
+        Yields history of evaluated generations with acceptance decisions.
+        """
+        history: list[tuple[AgentSpec, GenerationMetrics, AcceptanceDecision | None]] = []
+
+        # 1. Run G0
+        g0_id = str(uuid.uuid4())
+        g0_metrics, g0_task_metrics, g0_failures = await self.run_generation(
+            generation_id=g0_id,
+            generation_number=0,
+            spec=initial_spec,
+            task_subset=task_subset,
+        )
+        history.append((initial_spec, g0_metrics, None))
+
+        current_spec = initial_spec
+        current_metrics = g0_metrics
+        current_gen_id = g0_id
+        current_gen_number = 0
+        current_failures = g0_failures
+
+        consecutive_rejections = 0
+
+        # Check initial stop condition
+        if target_accuracy is not None and current_metrics.accuracy >= target_accuracy:
+            return history
+        if stop_condition and stop_condition(current_metrics):
+            return history
+
+        while len(history) < max_generations:
+            try:
+                candidate_spec, mutation, candidate_metrics, decision = await self.evolve_step(
+                    current_generation_id=current_gen_id,
+                    current_generation_number=current_gen_number,
+                    current_spec=current_spec,
+                    current_metrics=current_metrics,
+                    failures=current_failures,
+                    task_subset=task_subset,
+                )
+            except Exception:
+                # No valid mutation generated or evaluation halted
+                break
+
+            history.append((candidate_spec, candidate_metrics, decision))
+
+            if decision.accepted:
+                current_spec = candidate_spec
+                current_metrics = candidate_metrics
+                current_gen_id = str(uuid.uuid4())
+                current_gen_number += 1
+                consecutive_rejections = 0
+
+                if target_accuracy is not None and candidate_metrics.accuracy >= target_accuracy:
+                    break
+                if stop_condition and stop_condition(candidate_metrics):
+                    break
+            else:
+                # Rejected: current remains parent!
+                consecutive_rejections += 1
+                if consecutive_rejections >= max_consecutive_rejections:
+                    break
+
+        return history
