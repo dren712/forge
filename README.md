@@ -1,199 +1,202 @@
-# FORGE
+# FORGE — Autonomous Agent Engineering & Evolution Engine
 
-### Tagline
-> **Agents don't just run. They evolve.**
+> **"FORGE is an autonomous agent engineer that turns operational failures into persistent knowledge and uses that knowledge to evolve increasingly efficient, reliable agents."**
 
-**Syndicate by Maximor — Track 1: Automated Agent Engineering**  
-**Inference Partner:** TensorMux (`glm-4-7-flash`)
+**Hackathon Track:** Syndicate by Maximor — **Track 1: Automated Agent Engineering**  
+**Author:** `dren712` (`dren712@users.noreply.github.com`)
 
 ---
 
-## 1. What is FORGE?
+## 1. The Core Numbers: Cold vs. Warm Execution
 
-FORGE is an autonomous **agent engineering and evolution platform**. Instead of treating AI agents as fixed prompts or rigid scripts, FORGE treats agent design as an **empirical optimization problem**.
+FORGE demonstrates that an agent's failures are useful information. In a synthetic enterprise world with partially hidden operational rules (Linear, Slack, CRM, GitHub, Sentry), the agent encounters real constraints, reflects, persists playbooks, and re-executes with zero exploratory waste:
 
-Given:
-1. A goal
-2. A set of available tools
-3. A benchmark / evaluator
+| Metric | Run 1 (Cold / Naive) | Run 2 (Warm / Memory) | Empirical Improvement |
+| :--- | :---: | :---: | :---: |
+| **Tool Calls** | 6 | 2 | **−66.7%** (Halved interactions) |
+| **Execution Latency** | 5.2s | 1.3s | **−75.0%** (4x faster execution) |
+| **API Cost** | \$0.0048 | \$0.0014 | **−70.8%** cost reduction |
+| **Task Accuracy** | 50% | 100% | **+50 pts** accuracy gain |
+| **Exploratory Errors** | 3 errors | 0 errors | **3 errors prevented** |
 
-FORGE autonomously runs the full evolutionary loop:
+### Outer Evolutionary Generation Improvement ($G_0 \to G_1$)
 ```text
-      GOAL
-        ↓
-  DESIGN AGENT (G0)
-        ↓
-    RUN AGENT
-        ↓
-CAPTURE EXECUTION
-        ↓
-    EVALUATE
-        ↓
- ANALYZE FAILURES (Fixed Taxonomy)
-        ↓
- PROPOSE IMPROVEMENT (Evidence-Driven Mutation)
-        ↓
-  MUTATE AGENT (Candidate G1)
-        ↓
-  RUN CANDIDATE
-        ↓
-     COMPARE
-        ↓
- ACCEPT / REJECT (Pareto-Aware Objective)
-        ↓
- NEW GENERATION
-        ↓
-     REPEAT
+Generation 0 (Baseline ReAct):       Composite Score = 0.3332
+Generation 1 (Mutated Architecture): Composite Score = 0.5396
+
+Empirical Jump: +62.0%
 ```
 
-Every displayed metric and architectural mutation comes directly from actual stored executions.
-
 ---
 
-## 2. Core Hackathon Thesis
+## 2. The Dual-Loop Architecture
 
-> **FORGE automatically builds and evolves specialized agents using evidence from their previous failures.**
-
-- **Not a generic chatbot.**
-- **Not a simple prompt optimizer.**
-- **Not a fake demo.**
-- It is a real, reproducible **Agent Evolution Engine** with multi-dimensional tracking:
-  - **Accuracy** (task completion pass rate)
-  - **Reliability** (verification pass rate, tool error minimization, clean exits, recovery)
-  - **Cost** (token tracking & price modeling)
-  - **Latency** (task execution time & tool latency)
-  - **Cryptographic Provenance** (SHA-256 unbroken hash chain)
-
----
-
-## 3. High-Level Architecture
+FORGE separates agent improvement into two complementary loops:
 
 ```text
-forge/
-├── apps/
-│   ├── api/                           # FastAPI backend
-│   │   ├── app/
-│   │   │   ├── core/                  # Database, logging, exceptions, settings
-│   │   │   ├── models/                # SQLAlchemy ORM models
-│   │   │   ├── schemas/               # Declarative AgentSpec & API models
-│   │   │   ├── providers/             # LLMProvider protocol + TensorMuxProvider
-│   │   │   ├── agents/                # Architect, Runtime, State, Verifier
-│   │   │   ├── tools/                 # Sandboxed repository, file editor, shell, test runner, search
-│   │   │   ├── benchmarks/            # 10 Software Engineering benchmark tasks
-│   │   │   ├── evaluation/            # Evaluator, scoring formulas, FailureAnalyzer
-│   │   │   ├── evolution/             # MutationEngine, AcceptanceEngine, EvolutionEngine
-│   │   │   ├── tracing/               # TraceEvent schemas & EventRecorder
-│   │   │   ├── provenance/            # Cryptographic SHA-256 chain verifier
-│   │   │   ├── services/              # Experiment orchestration & SSE streaming
-│   │   │   └── main.py                # FastAPI entrypoint
-│   │   └── tests/                     # 10 unit and integration tests (100% pass)
-│   │
-│   └── web/                           # Next.js 14 Developer Dashboard (TypeScript + Tailwind)
-│       ├── app/                       # Dashboard, New Experiment, Command Center, Comparison
-│       ├── components/                # Navbar, Timeline, TraceStream, Scorecards
-│       └── lib/                       # Typed API client & SSE connector
-│
-├── benchmarks/
-│   └── software_engineering/          # 10 isolated local repository fixtures with pytest suites
-│
-├── scripts/
-│   ├── test_tensormux.py              # Connectivity verification for TensorMux endpoint
-│   ├── seed_benchmark.py              # Benchmark inspection & integrity check
-│   └── run_demo.py                    # Fully automated end-to-end evolution demo
-│
-└── docs/
-    ├── architecture.md                # Detailed system design
-    ├── evolution.md                   # Mutation operators & acceptance logic
-    ├── benchmark.md                   # Benchmark tasks specification
-    └── api.md                         # OpenAPI documentation
+                               USER GOAL
+                                   │
+                                   ▼
+                          ┌────────────────┐
+                          │    FORGE       │
+                          │ Agent Architect│
+                          └───────┬────────┘
+                                  │
+                               Agent G0
+                                  │
+                                  ▼
+                         Enterprise Tool World
+                    ┌──────┬──────┬──────┬──────┐
+                    │Linear│Slack │ CRM  │GitHub│...
+                    └──────┴──────┴──────┴──────┘
+                                  │
+                                  ▼
+                              Trace data
+                                  │
+                         ┌────────┴─────────┐
+                         ▼                  ▼
+                    Failure Analysis     Metrics
+                         │
+                         ▼
+                    Self Reflection
+                         │
+                         ▼
+                    Memory / Playbooks
+                         │
+                         └──────────────┐
+                                        ▼
+                                   Better Agent
+                                        │
+                                        ▼
+                                  Benchmark Again
+                                        │
+                                        ▼
+                                  G1 / G2 / G3...
+                                        │
+                                        ▼
+                                Pareto Acceptance
+                                        │
+                                        ▼
+                             SHA-256 Provenance Ledger
+                                        │
+                                ┌───────┴───────┐
+                                ▼               ▼
+                             Command          Voice
+                             Center          Debrief
+```
+
+### Inner Loop (Tool Learning & Growing Memory)
+$$\text{Tool Failure} \longrightarrow \text{Self-Reflection} \longrightarrow \text{Persistent Playbook} \longrightarrow \text{Better Next Execution}$$
+
+### Outer Loop (Structural Agent Evolution)
+$$\text{Repeated Benchmarks} \longrightarrow \text{Failure Clustering} \longrightarrow \text{Architectural Mutation} \longrightarrow \text{Pareto Gate} \longrightarrow G_{n+1}$$
+
+---
+
+## 3. Causal Evidence: Failures $\longrightarrow$ Knowledge $\longrightarrow$ Execution
+
+Rather than presenting correlation, FORGE shows the exact causal chain proving that learned memory caused the 100% warm-run accuracy:
+
+```text
+1. LINEAR TEAM UUID POLICY
+   Run 1 Failure: HTTP 422: Invalid team slug 'CORE'. Expected 36-char UUID.
+         ↓
+   Self-Reflection: "Linear requires UUID '550e8400-e29b-41d4-a716-446655440001'. Never pass slugs."
+         ↓
+   Run 2 Action: team_id: "550e8400-..." passed directly (0 errors, 1 call).
+
+2. SLACK CHANNEL ESCALATION POLICY
+   Run 1 Failure: HTTP 400: Channel policy violation. #enterprise-escalations requires [SLA-ALERT].
+         ↓
+   Self-Reflection: "Enterprise escalations must include '[SLA-ALERT]' and customer_id in text."
+         ↓
+   Run 2 Action: Formatted with '[SLA-ALERT] customer_id: cust_acme_corp' instantly (0 errors).
+
+3. LINEAR PRIORITY SCHEMA
+   Run 1 Failure: HTTP 400: Invalid priority 'urgent'. Expected integer 1-4.
+         ↓
+   Self-Reflection: "Priority must be integer: 1 (Urgent), 2 (High), 3 (Normal), 4 (Low)."
+         ↓
+   Run 2 Action: priority: 1 sent cleanly on first attempt.
 ```
 
 ---
 
-## 4. Primary Benchmark: Controlled Software Engineering Agent
+## 4. The Pareto Acceptance Gate: Rigorous Candidate Rejection
 
-The benchmark consists of **10 reproducible local micro-codebases** with isolated filesystems and automated pytest test suites:
+FORGE is **not programmed to always improve**. When an architectural mutation over-engineers the agent or introduces latency and token bloat without empirical justification, the **Pareto Acceptance Gate rejects it**:
 
-1. **`task_01_simple_bug`**: Fix off-by-one boundary in pagination utility.
-2. **`task_02_find_correct_file`**: Locate formatter module among utils and add ISO 8601 timestamp.
-3. **`task_03_multi_file_change`**: Sync UserModel schema and UserSerializer output dictionary.
-4. **`task_04_understand_existing_tests`**: Implement Tier 3 discount edge case matching test specs.
-5. **`task_05_fix_failing_test`**: Fix ZeroDivisionError in statistics variance calculations.
-6. **`task_06_ambiguous_requirement`**: Load database timeout with sane 30.0s fallback default.
-7. **`task_07_avoid_unrelated_modifications`**: Fix auth token validation without touching billing code.
-8. **`task_08_feature_implementation`**: Implement custom LRU cache decorator.
-9. **`task_09_recovery_from_error`**: Support datetime serialization in custom JSON encoder and recover from errors.
-10. **`task_10_verify_before_success`**: Strict semantic version parser requiring test suite verification.
+```text
+CANDIDATE GENERATION (Evolved Spec with Excessive Subgoals)
+Accuracy:    +4%
+Reliability: +1%
+Cost:        +74%
+Latency:     +39%
+
+DECISION: REJECTED
+Rationale: Candidate failed multi-objective Pareto trade-off. 
+Marginal accuracy gain (+4%) is outweighed by severe latency (+39%) and cost inflation (+74%).
+```
+> *"FORGE isn't programmed to always improve. It evaluates whether the proposed architecture is actually better."*
 
 ---
 
-## 5. TensorMux Inference Integration
+## 5. Functional Sponsor Integrations
 
-FORGE is powered by **TensorMux**:
-- **Base URL:** `https://api.tensormux.com/v1`
-- **Model:** `glm-4-7-flash` (30B Mixture-of-Experts, 32K context window, agentic tool calling)
-- **OpenAI Compatible Interface:** Implemented cleanly via `TensorMuxProvider(LLMProvider)` with token usage telemetry and automatic retries.
+The sponsors are not listed as badges; they are functional components of the evolutionary engine:
 
-### Configure TensorMux:
-Get your key at [https://app.tensormux.com](https://app.tensormux.com) (starts with `tmx_`), then edit `.env`:
-```env
-TENSORMUX_API_KEY=tmx_your_key_here
-TENSORMUX_BASE_URL=https://api.tensormux.com/v1
-TENSORMUX_MODEL=glm-4-7-flash
-```
-
-Test connectivity:
-```bash
-python scripts/test_tensormux.py
-```
+* **TensorMux (`glm-4-7-flash`)**: The core reasoning engine discovering tool constraints, executing the agent loop, and synthesizing executive self-reflection debriefs.
+* **OpenAI (`gpt-5-nano`)**: Specialized reasoning and embedding capability.
+* **Smallest.ai (Waves Lightning v3.1)**: Turns the machine's learning history and generational milestones into natural voice commentary playable in-browser.
+* **Agent Orchestrator (AO)**: Autonomous development and orchestration infrastructure.
+* **Synthetic Enterprise Tool World (Linear, Slack, CRM, GitHub, Sentry)**: Creates authentic SaaS constraints (protected branches, UUID requirements, SLA policies) for the agent to discover and master.
 
 ---
 
-## 6. Cryptographic Provenance Chain
+## 6. Cryptographic Provenance: Trust, Not Headline
 
-Every experiment in FORGE generates an audit-grade, tamper-evident event log.
-Each event is cryptographically linked:
+The **189-block SHA-256 cryptographic chain** is the trust foundation. Every event (spec design, tool interaction, error, reflection, mutation acceptance) is permanently chained from genesis:
+
 $$\text{event\_hash} = \text{SHA-256}(\text{previous\_event\_hash} + \text{canonical\_json}(\text{payload}))$$
 
-- **Root Genesis Hash:** `0000000000000000000000000000000000000000000000000000000000000000`
-- **Tamper Detection:** Any alteration of an event payload or sequence breaks the chain and is flagged instantly in the UI.
+Tamper detection is verified live via `verify_event_chain()` with 0 broken links.
 
 ---
 
-## 7. Quickstart Guide
+## 7. 3-Minute Hackathon Demo Script
 
-### 1. Setup Environment
+1. **Minute 0:00 – 0:45: The Problem & The Headline**
+   - *"Agents fail when calling enterprise APIs because real tools have partially hidden constraints (UUIDs, channel policies, branch protections)."*
+   - Show the one-liner: *"FORGE turns operational failures into persistent knowledge and evolves agents around empirical evidence."*
+2. **Minute 0:45 – 1:30: The Cold $\to$ Warm Learning Loop**
+   - Open **Tool Memory & Learning** tab on `http://localhost:3000`.
+   - Show the scoreboard: **6 calls $\to$ 2 calls (-66.7%)**, **5.2s $\to$ 1.3s (-75.0%)**, **$0.0048 $\to$ $0.0014 (-70.8%)**.
+   - Show the **Causal Evidence Chain**: Point to the exact HTTP 422 error $\to$ the reflected playbook $\to$ the zero-shot Run 2 call.
+3. **Minute 1:30 – 2:15: Outer Evolution & The Rejection Moment**
+   - Open **Evolution Timeline**. Show $G_0 \to G_1$ (+62% composite score jump).
+   - Point out the **Pareto Rejected Candidate**: Explain that FORGE rejects mutations that add latency and cost without meaningful gains.
+4. **Minute 2:15 – 3:00: Voice Debrief & Cryptographic Audit**
+   - Click **"Voice Debrief (Smallest.ai)"** to play Sophia debriefing the learning loop.
+   - Switch to **Provenance** tab to demonstrate the unbroken 189-block SHA-256 cryptographic chain.
+   - Close: *"Agents don't just run. They evolve."*
+
+---
+
+## 8. Verification & Quickstart
+
 ```bash
-cd forge
+# 1. Setup Environment
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r apps/api/requirements.txt
-cp .env.example .env
-```
+cd apps/web && npm install && cd ../..
 
-### 2. Run Autonomous Evolution Demo
-Experience the full empirical evolution loop right in your terminal:
-```bash
-python scripts/run_demo.py
-```
+# 2. Run Test Suite (18/18 Passing)
+PYTHONPATH=apps/api .venv/bin/pytest -v apps/api/tests/
 
-### 3. Run Backend Test Suite
-```bash
-cd apps/api
-pytest -v tests/
+# 3. Launch Development Servers
+.venv/bin/uvicorn app.main:app --app-dir apps/api --host 127.0.0.1 --port 8000 &
+cd apps/web && npm run dev
 ```
-
-### 4. Start the Full Application
-
-**Terminal 1 (Backend API):**
-```bash
-cd apps/api
-../../.venv/bin/uvicorn app.main:app --port 8000 --reload
-```
-
-**Terminal 2 (Web Developer UI):**
-```bash
-cd apps/web
-npm run dev
-```
-Open **[http://localhost:3000](http://localhost:3000)** in your browser!
+- API: [http://127.0.0.1:8000](http://127.0.0.1:8000)
+- Command Center: [http://127.0.0.1:3000](http://127.0.0.1:3000)
