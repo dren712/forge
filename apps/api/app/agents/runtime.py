@@ -208,7 +208,7 @@ class AgentRuntime:
         execution_id: str | None = None,
     ) -> AgentState:
         """Executes the agent loop inside the target workspace with canonical lifecycle management."""
-        state = AgentState(goal=goal)
+        state = AgentState(goal=goal, execution_id=execution_id)
         state.transition_to("RUNNING")
 
         # Initialize conversation messages and planner guidance
@@ -552,6 +552,7 @@ class AgentRuntime:
                 state=state,
                 memory_store=self.memory_store,
                 model_name=self.spec.model,
+                execution_id=execution_id,
             )
             for entry in reflection_report.entries:
                 await self._emit_event(

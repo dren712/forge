@@ -109,6 +109,7 @@ class EvolutionEngine:
 
             metric = ExecutionMetrics(
                 task_id=task.id,
+                execution_id=execution_id,
                 task_success=evaluation.passed,
                 accuracy=1.0 if evaluation.passed else 0.0,
                 reliability=rel,

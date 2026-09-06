@@ -231,7 +231,7 @@ class ExperimentService:
         # Persist executions
         for tm in task_metrics:
             db.add(ExecutionModel(
-                id=str(uuid.uuid4()),
+                id=getattr(tm, "execution_id", None) or str(uuid.uuid4()),
                 experiment_id=exp.id,
                 generation_id=gen.id,
                 task_id=tm.task_id,
@@ -571,7 +571,7 @@ class ExperimentService:
         # Persist task-level executions for candidate
         for tm in candidate_task_metrics:
             db.add(ExecutionModel(
-                id=str(uuid.uuid4()),
+                id=getattr(tm, "execution_id", None) or str(uuid.uuid4()),
                 experiment_id=exp.id,
                 generation_id=cand_gen_id,
                 task_id=tm.task_id,

@@ -8,6 +8,7 @@ PRICE_PER_1K_COMPLETION_TOKENS = 0.0015
 
 class ExecutionMetrics(BaseModel):
     task_id: str
+    execution_id: str | None = None
     task_success: bool
     accuracy: float
     reliability: float
