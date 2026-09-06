@@ -79,6 +79,8 @@ class GitHubTool:
                 success=False,
                 output="HTTP 400 Bad Request: 'action' parameter is required.",
                 error="missing_action",
+                error_type="missing_action",
+                status_code=400,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -89,6 +91,7 @@ class GitHubTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"branches": self.BRANCHES, "total": len(self.BRANCHES)}, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -104,6 +107,8 @@ class GitHubTool:
                     success=False,
                     output="HTTP 400 Bad Request: 'title' and 'head_branch' are required fields.",
                     error="missing_required_fields",
+                    error_type="missing_required_fields",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -117,6 +122,8 @@ class GitHubTool:
                         f"Head branch '{head}' must start with one of: {list(valid_prefixes)}."
                     ),
                     error="branch_naming_policy_violation",
+                    error_type="branch_naming_policy_violation",
+                    status_code=403,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -129,6 +136,8 @@ class GitHubTool:
                         "PR title must include issue ticket tag in brackets, e.g. '[LIN-101] Fix DB pool' or '[HOTFIX] Patch'."
                     ),
                     error="pr_title_policy_violation",
+                    error_type="pr_title_policy_violation",
+                    status_code=422,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -150,6 +159,7 @@ class GitHubTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"status": "created", "pr": new_pr}, indent=2),
+                status_code=201,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -161,6 +171,8 @@ class GitHubTool:
                     success=False,
                     output="HTTP 400 Bad Request: 'pr_number' integer is required.",
                     error="missing_pr_number",
+                    error_type="missing_pr_number",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -171,6 +183,8 @@ class GitHubTool:
                     success=False,
                     output=f"HTTP 404 Not Found: Pull request #{pr_number} not found.",
                     error="pr_not_found",
+                    error_type="pr_not_found",
+                    status_code=404,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -184,6 +198,7 @@ class GitHubTool:
                     "approvals_count": matched["approvals"],
                     "mergeable": matched["ci_status"] == "success" and matched["approvals"] >= 2,
                 }, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -195,6 +210,8 @@ class GitHubTool:
                     success=False,
                     output="HTTP 400 Bad Request: 'pr_number' integer is required.",
                     error="missing_pr_number",
+                    error_type="missing_pr_number",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -205,6 +222,8 @@ class GitHubTool:
                     success=False,
                     output=f"HTTP 404 Not Found: Pull request #{pr_number} not found.",
                     error="pr_not_found",
+                    error_type="pr_not_found",
+                    status_code=404,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -212,6 +231,7 @@ class GitHubTool:
                 return ToolResult(
                     success=True,
                     output=json.dumps({"status": "already_merged", "pr_number": pr_number}),
+                    status_code=200,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -223,6 +243,8 @@ class GitHubTool:
                         f"Branch protection requires at least 2 approvals (currently {matched['approvals']})."
                     ),
                     error="insufficient_approvals",
+                    error_type="insufficient_approvals",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -231,6 +253,7 @@ class GitHubTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"status": "merged", "pr_number": pr_number, "merged_at": time.time()}, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -238,6 +261,8 @@ class GitHubTool:
             success=False,
             output=f"HTTP 400 Bad Request: Unknown action '{action}'.",
             error="unknown_action",
+            error_type="unknown_action",
+            status_code=400,
             latency_ms=(time.perf_counter() - start_time) * 1000.0,
         )
 
@@ -314,6 +339,8 @@ class SentryObservabilityTool:
                 success=False,
                 output="HTTP 400 Bad Request: 'action' parameter is required.",
                 error="missing_action",
+                error_type="missing_action",
+                status_code=400,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -324,6 +351,7 @@ class SentryObservabilityTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"services": self.SERVICES}, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -335,6 +363,8 @@ class SentryObservabilityTool:
                     success=False,
                     output="HTTP 400 Bad Request: 'service_slug' is required.",
                     error="missing_service_slug",
+                    error_type="missing_service_slug",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -344,6 +374,8 @@ class SentryObservabilityTool:
                     success=False,
                     output=f"HTTP 404 Not Found: Service '{service_slug}' not found.",
                     error="service_not_found",
+                    error_type="service_not_found",
+                    status_code=404,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -360,6 +392,7 @@ class SentryObservabilityTool:
                         "asyncpg.exceptions.PoolAcquireTimeoutError: Pool exhausted (max 50 connections)."
                     ) if svc["error_rate_pct"] > 1.0 else "None",
                 }, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -373,6 +406,7 @@ class SentryObservabilityTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"alert_policy": thresholds}, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -386,6 +420,8 @@ class SentryObservabilityTool:
                     success=False,
                     output="HTTP 400 Bad Request: 'issue_id' is required.",
                     error="missing_issue_id",
+                    error_type="missing_issue_id",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -394,6 +430,8 @@ class SentryObservabilityTool:
                     success=False,
                     output="HTTP 422 Unprocessable Entity: 'resolution_note' must be detailed (min 15 characters).",
                     error="invalid_resolution_note",
+                    error_type="invalid_resolution_note",
+                    status_code=422,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -404,6 +442,8 @@ class SentryObservabilityTool:
                     success=False,
                     output=f"HTTP 404 Not Found: Incident '{issue_id}' not found.",
                     error="incident_not_found",
+                    error_type="incident_not_found",
+                    status_code=404,
                     latency_ms=(time.perf_counter() - start_time) * 1000.0,
                 )
 
@@ -414,6 +454,7 @@ class SentryObservabilityTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"status": "resolved", "incident": inc}, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start_time) * 1000.0,
             )
 
@@ -421,5 +462,7 @@ class SentryObservabilityTool:
             success=False,
             output=f"HTTP 400 Bad Request: Unknown action '{action}'.",
             error="unknown_action",
+            error_type="unknown_action",
+            status_code=400,
             latency_ms=(time.perf_counter() - start_time) * 1000.0,
         )

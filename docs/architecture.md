@@ -284,3 +284,77 @@ Experiment (id, name, goal, benchmark_id, best_generation_id)
 2. **AI Grants (OpenAI)**: Isolated behind `AIGrantsIndiaProvider` (`apps/api/app/providers/aigrants.py`). Model defaults to `gpt-5-nano`.
 3. **Smallest.ai**: Isolated behind `SmallestAIVoiceService` (`apps/api/app/providers/voice.py`). Generates lightning-fast audio debriefs without impacting agent execution.
 4. **Maximor AO**: Isolated behind `AOOrchestratorBridge` (`apps/api/app/agents/ao_integration.py`). Provides CLI status checks; fully optional at runtime.
+
+---
+
+# S3 Runtime Contract
+
+The Section S3 runtime contract formalizes the boundaries between configuration (`AgentSpec`), execution (`AgentState`), tool environments (`ToolRegistry`), and objective outputs (`ExecutionResult`).
+
+```text
+AgentSpec (Configuration)
+   │
+   ├── model, system_prompt, planner, tools, memory, verifier, retry_policy
+   ▼
+Execution Input (AgentRuntime.run)
+   │
+   ├── goal: str
+   ├── workspace: Path (sandboxed)
+   ├── generation_id, execution_id
+   ▼
+Runtime Step Loop
+   │
+   ├── State: CREATED -> RUNNING
+   ├── Context Construction (System Prompt + Tool Memory + Messages)
+   ├── Model Inference (LLMProvider -> Normalized LLMResponse)
+   ▼
+Tool Interaction & Validation
+   │
+   ├── State: RUNNING -> WAITING_FOR_TOOL
+   ├── Tool Call Validation (_validate_tool_call):
+   │     ├── Schema type check
+   │     ├── Required parameters check
+   │     ├── Sandbox path confinement (sanitize_path)
+   │     └── On violation: return structured ToolResult observation without crashing
+   ├── Tool Execution:
+   │     ├── Sequential dispatch across tools
+   │     ├── Underlying state mutation (.linear_state.json, etc.)
+   │     └── Retry policy for transient exceptions
+   └── Observation Feedback:
+         ├── If error: State -> RECOVERING
+         └── Else: State -> RUNNING
+   ▼
+Verification Gate
+   │
+   ├── Triggered on model terminal output (no tool calls)
+   ├── State: RUNNING -> VERIFYING
+   ├── AgentVerifier.verify(state, workspace) -> VerificationResult
+   ├── IF failed:
+   │     ├── State -> RECOVERING
+   │     └── Inject [VERIFIER NOTICE] observation, continue loop
+   └── IF passed:
+         ├── State -> COMPLETED
+         └── Conclude loop
+   ▼
+Execution Result (`ExecutionResult`)
+   │
+   ├── status: "COMPLETED" | "FAILED" | "TIMEOUT" | "MAX_STEPS" | "CANCELLED"
+   ├── final_output: str | None
+   ├── verification: VerificationResult (checks, passed, failure_reason)
+   ├── tool_calls: list[dict[str, Any]] (status_code, error_type, latency_ms)
+   ├── model_calls: int
+   ├── errors: list[str]
+   ├── duration_ms: float
+   └── usage: {"input_tokens": int, "output_tokens": int, "total_tokens": int}
+```
+
+### Failure Path State Transitions
+1. **Tool Parameter / Policy Failure**:
+   `WAITING_FOR_TOOL -> RECOVERING` (Record structured `ToolResult` observation, model replans on next turn).
+2. **Verifier Rejection**:
+   `VERIFYING -> RECOVERING` (Inject `[VERIFIER NOTICE]` feedback, continue execution loop).
+3. **Execution Limits Exceeded**:
+   `RUNNING | RECOVERING -> TIMEOUT` (exceeded `MAX_AGENT_RUNTIME_SECONDS`).
+   `RUNNING | RECOVERING -> MAX_STEPS` (exceeded `MAX_AGENT_STEPS` or `MAX_TOOL_CALLS`).
+4. **Provider / Fatal Failure**:
+   `RUNNING -> FAILED` (exhausted `MAX_MODEL_RETRIES` on provider exception).

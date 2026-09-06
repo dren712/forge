@@ -77,6 +77,7 @@ class LinearIssueTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"teams": self.TEAMS}, indent=2),
+                status_code=200,
                 latency_ms=latency,
                 metadata={"teams_count": len(self.TEAMS)},
             )
@@ -88,6 +89,7 @@ class LinearIssueTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"issues": state.get("issues", [])}, indent=2),
+                status_code=200,
                 latency_ms=latency,
             )
 
@@ -102,6 +104,8 @@ class LinearIssueTool:
                     success=False,
                     output="Error 400 Bad Request: 'team_id' is required to create an issue.",
                     error="missing_team_id",
+                    error_type="missing_team_id",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -115,6 +119,8 @@ class LinearIssueTool:
                         f"Team slugs or names are not supported. Use action='list_teams' to query valid UUIDs."
                     ),
                     error="invalid_team_uuid",
+                    error_type="invalid_team_uuid",
+                    status_code=422,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -124,6 +130,8 @@ class LinearIssueTool:
                     success=False,
                     output=f"Error 400 Bad Request: priority must be integer 1 (Urgent), 2 (High), 3 (Normal), or 4 (Low). Received: {priority}",
                     error="invalid_priority_type",
+                    error_type="invalid_priority_type",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -132,6 +140,8 @@ class LinearIssueTool:
                     success=False,
                     output="Error 400 Bad Request: 'title' cannot be empty.",
                     error="missing_title",
+                    error_type="missing_title",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -156,6 +166,7 @@ class LinearIssueTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"success": True, "created_issue": new_issue}, indent=2),
+                status_code=201,
                 latency_ms=(time.perf_counter() - start) * 1000,
                 metadata={"issue_id": issue_id},
             )
@@ -167,6 +178,8 @@ class LinearIssueTool:
                     success=False,
                     output="Error 400 Bad Request: 'issue_id' is required for update_issue.",
                     error="missing_issue_id",
+                    error_type="missing_issue_id",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -177,6 +190,8 @@ class LinearIssueTool:
                     success=False,
                     output=f"Error 404 Not Found: Issue '{issue_id}' does not exist.",
                     error="issue_not_found",
+                    error_type="issue_not_found",
+                    status_code=404,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -193,6 +208,8 @@ class LinearIssueTool:
                             "Please provide 'assignee_id' with update_issue."
                         ),
                         error="missing_assignee_for_in_progress",
+                        error_type="missing_assignee_for_in_progress",
+                        status_code=409,
                         latency_ms=(time.perf_counter() - start) * 1000,
                     )
 
@@ -207,6 +224,7 @@ class LinearIssueTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"success": True, "updated_issue": target}, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start) * 1000,
             )
 
@@ -214,6 +232,8 @@ class LinearIssueTool:
             success=False,
             output=f"Error 400 Bad Request: Unknown action '{action}'",
             error="unknown_action",
+            error_type="unknown_action",
+            status_code=400,
             latency_ms=(time.perf_counter() - start) * 1000,
         )
 
@@ -257,6 +277,7 @@ class SlackChannelTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"channels": self.CHANNELS}, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start) * 1000,
             )
 
@@ -269,6 +290,8 @@ class SlackChannelTool:
                     success=False,
                     output="Error 400 Bad Request: 'channel' parameter is required.",
                     error="missing_channel",
+                    error_type="missing_channel",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -278,6 +301,8 @@ class SlackChannelTool:
                     success=False,
                     output=f"Error 404 Not Found: Channel '{channel}' does not exist. Available: {list(valid_names)}",
                     error="channel_not_found",
+                    error_type="channel_not_found",
+                    status_code=404,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -292,6 +317,8 @@ class SlackChannelTool:
                             "and cite the customer identifier (e.g. 'customer_id: cust_...')."
                         ),
                         error="policy_violation_enterprise_channel",
+                        error_type="policy_violation_enterprise_channel",
+                        status_code=400,
                         latency_ms=(time.perf_counter() - start) * 1000,
                     )
 
@@ -308,14 +335,17 @@ class SlackChannelTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"status": "ok", "delivered_to": channel, "message": text}),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start) * 1000,
                 metadata={"channel": channel},
             )
 
         return ToolResult(
             success=False,
-            output=f"Error 400: Unknown action '{action}'",
+            output=f"Error 400 Bad Request: Unknown action '{action}'",
             error="unknown_action",
+            error_type="unknown_action",
+            status_code=400,
             latency_ms=(time.perf_counter() - start) * 1000,
         )
 
@@ -371,6 +401,7 @@ class CustomerCRMTool:
             return ToolResult(
                 success=True,
                 output=json.dumps({"customers": list(self.CUSTOMERS.values())}, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start) * 1000,
             )
 
@@ -381,6 +412,8 @@ class CustomerCRMTool:
                     success=False,
                     output="Error 400 Bad Request: 'customer_id' is required.",
                     error="missing_customer_id",
+                    error_type="missing_customer_id",
+                    status_code=400,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
@@ -390,18 +423,23 @@ class CustomerCRMTool:
                     success=False,
                     output=f"Error 404 Not Found: Customer '{cid}' not found in CRM.",
                     error="customer_not_found",
+                    error_type="customer_not_found",
+                    status_code=404,
                     latency_ms=(time.perf_counter() - start) * 1000,
                 )
 
             return ToolResult(
                 success=True,
                 output=json.dumps({"customer": data}, indent=2),
+                status_code=200,
                 latency_ms=(time.perf_counter() - start) * 1000,
             )
 
         return ToolResult(
             success=False,
-            output=f"Error 400: Unknown action '{action}'",
+            output=f"Error 400 Bad Request: Unknown action '{action}'",
             error="unknown_action",
+            error_type="unknown_action",
+            status_code=400,
             latency_ms=(time.perf_counter() - start) * 1000,
         )

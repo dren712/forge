@@ -316,3 +316,84 @@ VERIFIED (Zero API keys in tracked files, git history, or diagnostic endpoints; 
 ## Architecture Decisions
 - Adopted lightweight `ModelRouter` (`apps/api/app/providers/router.py`) to decouple domain roles (`ARCHITECT`, `EXECUTOR`, `REFLECTOR`, `MUTATOR`) from concrete model names.
 - Retained strict `DeterministicMockProvider` for all offline CI unit tests to ensure zero dependency on network or external credits during automated builds.
+
+---
+
+# S3 Status
+
+Runtime:
+VERIFIED (Bounded, stateful, observable multi-turn loop with pre-execution validation, max step/timeout guards, and sequential tool dispatch)
+
+Agent state:
+VERIFIED (Canonical AgentState with explicit lifecycle transitions CREATED->RUNNING->WAITING_FOR_TOOL->RECOVERING->VERIFYING->COMPLETED, observations tracking, and ExecutionResult mapping)
+
+Tool contract:
+VERIFIED (Tool protocol with ToolResult returning success, output, error, error_type, status_code, latency_ms, metadata)
+
+Linear:
+VERIFIED (Enforces 36-character team UUID with 422 invalid_team_uuid, integer priority 1–4 with 400 invalid_priority_type, assignee for In Progress with 409 missing_assignee_for_in_progress; mutates .linear_state.json)
+
+Slack:
+VERIFIED (Enforces [SLA-ALERT] and customer_id on #enterprise-escalations with 400 policy_violation_enterprise_channel; mutates .slack_messages.json)
+
+CRM:
+VERIFIED (Exposes customer contracts and SLAs: Enterprise 1h, Growth 8h, Free 48h; informs incident prioritization)
+
+GitHub:
+VERIFIED (Enforces branch naming prefixes fix/, feat/, hotfix/, chore/ with 403, bracketed issue tags in PR title with 422, 2 approvals for merge with 400; mutates .github_state.json)
+
+Sentry:
+VERIFIED (Provides error traces and APM metrics, enforces minimum 15-char resolution note with 422 invalid_resolution_note; mutates .sentry_state.json)
+
+Verification:
+VERIFIED (Structured VerificationResult with individual VerificationCheck records; blocks premature completion declarations; AgentVerifier.verify_enterprise_state objectively verifies workspace state)
+
+Recovery:
+VERIFIED (Tool constraint violations returned as observations without crashing; runtime transitions to RECOVERING allowing agent to self-correct; bounded retries for transient failures)
+
+Sandbox:
+VERIFIED (sanitize_path strictly blocks path traversal escaping workspace via target.is_relative_to; ShellTool strips sensitive environment secrets and blocks dangerous commands)
+
+Tracing:
+VERIFIED (Emits AGENT_STARTED, MODEL_CALL, MODEL_RESPONSE, TOOL_CALL, TOOL_RESULT with status_code/error_type, VERIFICATION_STARTED, VERIFICATION_RESULT, AGENT_COMPLETED)
+
+Live TensorMux runtime:
+VERIFIED (Live multi-turn enterprise execution completed with glm-4-7-flash via scripts/test_live_enterprise_runtime.py: 2 turns, 2 tool calls, 3937 tokens, latency 13.4s, status COMPLETED)
+
+## Files Changed
+- `apps/api/app/tools/base.py`: Added `error_type` and `status_code` to `ToolResult`; hardened `sanitize_path` using `target.is_relative_to(workspace_resolved)`.
+- `apps/api/app/tools/third_party_apps.py`: Populated `status_code` and `error_type` across `LinearIssueTool`, `SlackChannelTool`, and `CustomerCRMTool`.
+- `apps/api/app/tools/devops_tools.py`: Populated `status_code` and `error_type` across `GitHubTool` and `SentryObservabilityTool`.
+- `apps/api/app/agents/verifier.py`: Added `VerificationCheck` and `VerificationResult` models with tuple-unpacking backward compatibility; added objective `verify_enterprise_state` checker.
+- `apps/api/app/schemas/execution.py`: Created canonical `ExecutionResult` model matching Section 37 contract.
+- `apps/api/app/agents/state.py`: Updated `AgentState` with canonical lifecycle state machine (`VALID_TRANSITIONS`, `transition_to`), `observations`, `memory_context`, and `to_execution_result()`.
+- `apps/api/app/agents/runtime.py`: Hardened `AgentRuntime` with pre-execution tool validation (`_validate_tool_call`), explicit state transitions, bounded model retries, sequential tool execution, structured observation tracking, and verifier gating.
+- `apps/api/tests/test_enterprise_workflow.py`: Created end-to-end integration test of the 5-tool enterprise incident resolution workflow (CRM -> Sentry -> Linear -> Slack -> GitHub -> Sentry -> Verifier).
+- `apps/api/tests/test_runtime_hardening.py`: Created 7 automated tests verifying state transitions, tool call validation, recovery loop, verifier gating, path traversal blocking, and execution limits.
+- `scripts/test_live_enterprise_runtime.py`: Created live verification script executing an enterprise agent task with live TensorMux provider.
+- `docs/agent-runtime.md`: Created comprehensive runtime and enterprise environment documentation.
+- `docs/architecture.md`: Appended `# S3 Runtime Contract`.
+
+## Tests Run
+- `.venv/bin/pytest apps/api/tests`: 39 passed in 1.31s (100% green across all 14 test suites).
+- `.venv/bin/pytest apps/api/tests/test_enterprise_workflow.py`: 1 passed in 0.07s.
+- `.venv/bin/pytest apps/api/tests/test_runtime_hardening.py`: 7 passed in 0.20s.
+- `npm --prefix apps/web run build`: Exit code 0 (5/5 static and dynamic pages compiled successfully).
+
+## Live Verification
+- `scripts/test_live_enterprise_runtime.py`: Live execution with TensorMux (`glm-4-7-flash`):
+  - Model: `glm-4-7-flash`
+  - Turns: 2
+  - Tool Calls: 2 (`crm_api:get_customer`, `sentry_api:fetch_error_trace`)
+  - Errors: 0
+  - Tokens: 3,937
+  - Duration: 13,421.4 ms
+  - Status: `COMPLETED`
+  - Verification: `True`
+
+## Remaining Risks
+- Parallel tool execution is deliberately serialized for enterprise tools; if benchmark requires high tool concurrency, parallel execution semantics with optimistic locking will need to be formalized in S4/S5.
+- The `run_learning_loop` endpoint in `experiment_service.py` still contains hardcoded cold vs warm deltas identified in S0/S1 audit (scheduled to be resolved in S4/S5 benchmark execution).
+
+## Known Limitations
+- Standard sandbox mode blocks outbound HTTPS connections; live provider executions (`scripts/test_live_enterprise_runtime.py`) require network approval, whereas all CI unit tests run offline in `FORGE_TEST_MODE=1`.

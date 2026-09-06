@@ -7,6 +7,8 @@ class ToolResult(BaseModel):
     success: bool
     output: str
     error: str | None = None
+    error_type: str | None = None
+    status_code: int | None = None
     latency_ms: float = 0.0
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -28,9 +30,15 @@ def sanitize_path(workspace: Path, relative_or_absolute: str | Path) -> Path:
     Raises PermissionError if path traversal is attempted.
     """
     workspace_resolved = workspace.resolve()
-    target = (workspace_resolved / relative_or_absolute).resolve()
+    rel_str = str(relative_or_absolute)
+    if Path(rel_str).is_absolute():
+        target = Path(rel_str).resolve()
+    else:
+        target = (workspace_resolved / rel_str).resolve()
 
-    if not str(target).startswith(str(workspace_resolved)):
+    try:
+        target.relative_to(workspace_resolved)
+    except ValueError:
         raise PermissionError(f"Security violation: path '{relative_or_absolute}' escapes designated workspace.")
 
     return target
