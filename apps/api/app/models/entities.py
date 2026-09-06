@@ -45,6 +45,7 @@ class GenerationModel(Base):
     mutation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     benchmark_id: Mapped[str] = mapped_column(String(64), default="software_engineering")
+    benchmark_version: Mapped[str | None] = mapped_column(String(32), nullable=True, default="2.0.0")
     status: Mapped[str] = mapped_column(String(32), default="CREATED")  # RUNNING, COMPLETED, ACCEPTED, REJECTED, FAILED
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

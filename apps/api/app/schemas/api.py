@@ -42,6 +42,7 @@ class GenerationResponse(BaseModel):
     mutation_id: str | None
     metrics: dict[str, Any] | None
     benchmark_id: str
+    benchmark_version: str | None = None
     status: str
     rejection_reason: str | None
     created_at: datetime

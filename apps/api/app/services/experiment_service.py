@@ -108,13 +108,17 @@ class ExperimentService:
             generation_number=0,
         )
 
+        bench_version = getattr(bench, "version", "2.0.0") if bench else "1.0.0"
+
         gen_id = str(uuid.uuid4())
         gen = GenerationModel(
             id=gen_id,
             experiment_id=exp.id,
+            parent_generation_id=None,
             generation_number=0,
             agent_spec=spec.model_dump(),
             benchmark_id=exp.benchmark_id,
+            benchmark_version=bench_version,
             status="CREATED",
         )
         db.add(gen)
@@ -359,6 +363,7 @@ class ExperimentService:
             mutation_id=mutation.id,
             metrics=candidate_metrics.model_dump(),
             benchmark_id=exp.benchmark_id,
+            benchmark_version=getattr(bench, "version", "2.0.0") if bench else "1.0.0",
             status=decision.status,
             rejection_reason=decision.reason if not decision.accepted else None,
         )
