@@ -7,7 +7,13 @@ from app.evolution.mutation import (
     apply_mutation,
 )
 from app.evolution.mutation_generator import MutationGenerator
-from app.evolution.acceptance import AcceptanceEngine, AcceptanceDecision
+from app.evolution.acceptance import (
+    AcceptanceEngine,
+    AcceptanceDecision,
+    DominanceResult,
+    TradeoffPolicy,
+    evaluate_acceptance,
+)
 from app.evolution.engine import EvolutionEngine
 
 __all__ = [
@@ -20,5 +26,8 @@ __all__ = [
     "MutationGenerator",
     "AcceptanceEngine",
     "AcceptanceDecision",
+    "DominanceResult",
+    "TradeoffPolicy",
+    "evaluate_acceptance",
     "EvolutionEngine",
 ]
